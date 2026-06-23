@@ -4,9 +4,9 @@
   import { get } from "svelte/store";
   import { library } from "$lib/stores/library.svelte";
 
-  const CARD_WIDTH = 170;
+  const MIN_CARD_WIDTH = 170;
   const CARD_GAP = 20;
-  const ROW_HEIGHT = 170 + 44 + CARD_GAP;
+  const TEXT_HEIGHT = 44;
 
   let scrollEl: HTMLDivElement | undefined = $state();
   let containerWidth = $state(0);
@@ -20,15 +20,25 @@
     return () => observer.disconnect();
   });
 
+  // Pick the column count that fits at the minimum card width, then stretch
+  // cards (and their square art) to fill whatever space is left over, so a
+  // window size between two exact column-fits doesn't just leave a dead gap
+  // on the right of every row.
   const columnsPerRow = $derived(
-    Math.max(1, Math.floor((containerWidth + CARD_GAP) / (CARD_WIDTH + CARD_GAP))),
+    Math.max(1, Math.floor((containerWidth + CARD_GAP) / (MIN_CARD_WIDTH + CARD_GAP))),
   );
+  const cardWidth = $derived(
+    containerWidth > 0
+      ? (containerWidth - (columnsPerRow - 1) * CARD_GAP) / columnsPerRow
+      : MIN_CARD_WIDTH,
+  );
+  const rowHeight = $derived(cardWidth + TEXT_HEIGHT + CARD_GAP);
   const rowCount = $derived(Math.ceil(library.albums.length / columnsPerRow));
 
   const virtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
     count: 0,
     getScrollElement: () => scrollEl ?? null,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: () => rowHeight,
     overscan: 4,
   });
 
@@ -36,7 +46,7 @@
     get(virtualizer).setOptions({
       count: rowCount,
       getScrollElement: () => scrollEl ?? null,
-      estimateSize: () => ROW_HEIGHT,
+      estimateSize: () => rowHeight,
       overscan: 4,
     });
   });
@@ -58,8 +68,12 @@
     {#each $virtualizer.getVirtualItems() as row (row.key)}
       <div class="grid-row" style="transform: translateY({row.start}px);">
         {#each albumsForRow(row.index) as album (album.id)}
-          <button class="album-card" onclick={() => library.selectAlbum(album.id)}>
-            <div class="art">
+          <button
+            class="album-card"
+            style="width: {cardWidth}px;"
+            onclick={() => library.selectAlbum(album.id)}
+          >
+            <div class="art" style="width: {cardWidth}px; height: {cardWidth}px;">
               {#if album.art_path}
                 <img src={convertFileSrc(album.art_path)} alt={album.title} loading="lazy" />
               {:else}
@@ -111,7 +125,6 @@
   }
 
   .album-card {
-    width: 170px;
     background: none;
     border: none;
     color: inherit;
@@ -122,8 +135,6 @@
   }
 
   .art {
-    width: 170px;
-    height: 170px;
     border-radius: var(--radius);
     overflow: hidden;
     background: var(--bg-hover);
