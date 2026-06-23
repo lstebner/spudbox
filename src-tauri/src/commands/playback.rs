@@ -21,6 +21,7 @@ pub fn playback_play_track(state: State<AppState>, track_id: i64) -> Result<(), 
         title: track.title,
         artist: track.artist,
         album: track.album,
+        art_path: track.art_path,
     }));
     Ok(())
 }

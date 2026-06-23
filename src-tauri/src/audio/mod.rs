@@ -28,6 +28,10 @@ pub struct PlaybackSnapshot {
     pub position_ms: u64,
     pub duration_ms: u64,
     pub volume: f32,
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub art_path: Option<String>,
 }
 
 impl Default for PlaybackSnapshot {
@@ -38,6 +42,10 @@ impl Default for PlaybackSnapshot {
             position_ms: 0,
             duration_ms: 0,
             volume: 1.0,
+            title: None,
+            artist: None,
+            album: None,
+            art_path: None,
         }
     }
 }
@@ -49,6 +57,7 @@ pub struct TrackInfo {
     pub title: String,
     pub artist: String,
     pub album: String,
+    pub art_path: Option<String>,
 }
 
 pub enum PlayerCommand {

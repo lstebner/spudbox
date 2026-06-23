@@ -1,0 +1,42 @@
+:root {
+  --bg-base: #121214;
+  --bg-elevated: #19191c;
+  --bg-hover: #232327;
+  --bg-selected: #2a2a30;
+  --border: #2a2a2e;
+  --text-primary: #f2f2f3;
+  --text-secondary: #95959c;
+  --text-tertiary: #6b6b70;
+  --accent: #818cf8;
+  --accent-hover: #9499fa;
+  --radius-sm: 4px;
+  --radius: 8px;
+  --sidebar-width: 240px;
+  --transport-height: 88px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  overflow: hidden;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+input[type="range"] {
+  accent-color: var(--accent);
+}

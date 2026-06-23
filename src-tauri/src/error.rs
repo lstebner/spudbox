@@ -10,6 +10,8 @@ pub enum AppError {
     Migration(#[from] rusqlite_migration::Error),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("tauri error: {0}")]
+    Tauri(#[from] tauri::Error),
 }
 
 impl Serialize for AppError {

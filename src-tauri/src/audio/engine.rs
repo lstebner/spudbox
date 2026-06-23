@@ -21,6 +21,10 @@ struct EngineState {
     track_id: Option<i64>,
     duration_ms: u64,
     volume: f32,
+    title: Option<String>,
+    artist: Option<String>,
+    album: Option<String>,
+    art_path: Option<String>,
 }
 
 pub(super) fn run_engine(
@@ -43,6 +47,10 @@ pub(super) fn run_engine(
         track_id: None,
         duration_ms: 0,
         volume: 1.0,
+        title: None,
+        artist: None,
+        album: None,
+        art_path: None,
     };
 
     loop {
@@ -56,6 +64,10 @@ pub(super) fn run_engine(
             if sink.empty() && state.track_id.is_some() {
                 state.track_id = None;
                 state.duration_ms = 0;
+                state.title = None;
+                state.artist = None;
+                state.album = None;
+                state.art_path = None;
                 mpris.set_playback(MediaPlayback::Stopped);
             }
         }
@@ -88,6 +100,11 @@ fn handle_command(state: &mut EngineState, cmd: PlayerCommand, mpris: &Mpris) {
                     mpris.set_playback(MediaPlayback::Playing {
                         progress: Some(MediaPosition(Duration::ZERO)),
                     });
+
+                    state.title = Some(track.title);
+                    state.artist = Some(track.artist);
+                    state.album = Some(track.album);
+                    state.art_path = track.art_path;
                 }
                 Err(e) => eprintln!("failed to create audio sink: {e}"),
             },
@@ -146,5 +163,9 @@ fn build_snapshot(state: &EngineState) -> PlaybackSnapshot {
         position_ms,
         duration_ms: state.duration_ms,
         volume: state.volume,
+        title: state.title.clone(),
+        artist: state.artist.clone(),
+        album: state.album.clone(),
+        art_path: state.art_path.clone(),
     }
 }

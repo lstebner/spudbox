@@ -1,3 +1,4 @@
+pub mod art;
 pub mod tags;
 pub mod walk;
 

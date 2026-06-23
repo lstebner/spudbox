@@ -93,17 +93,33 @@ pub fn fingerprints(conn: &Connection) -> Result<HashMap<String, (i64, i64)>, Ap
     Ok(map)
 }
 
+pub fn sample_path_for_album(conn: &Connection, album_id: i64) -> Result<Option<String>, AppError> {
+    conn.query_row("SELECT path FROM tracks WHERE album_id = ?1 LIMIT 1", [album_id], |row| {
+        row.get(0)
+    })
+    .map(Some)
+    .or_else(|e| {
+        if e == rusqlite::Error::QueryReturnedNoRows {
+            Ok(None)
+        } else {
+            Err(e)
+        }
+    })
+    .map_err(AppError::from)
+}
+
 pub struct PlayableTrack {
     pub path: String,
     pub duration_ms: i64,
     pub title: String,
     pub artist: String,
     pub album: String,
+    pub art_path: Option<String>,
 }
 
 pub fn get_playable(conn: &Connection, track_id: i64) -> Result<PlayableTrack, AppError> {
     conn.query_row(
-        "SELECT t.path, t.duration_ms, t.title, ar.name, al.title
+        "SELECT t.path, t.duration_ms, t.title, ar.name, al.title, al.art_path
          FROM tracks t
          LEFT JOIN artists ar ON ar.id = t.track_artist_id
          LEFT JOIN albums al ON al.id = t.album_id
@@ -116,6 +132,7 @@ pub fn get_playable(conn: &Connection, track_id: i64) -> Result<PlayableTrack, A
                 title: row.get(2)?,
                 artist: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
                 album: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                art_path: row.get(5)?,
             })
         },
     )
@@ -136,35 +153,59 @@ pub struct TrackRow {
     pub title: String,
     pub artist: String,
     pub album: String,
+    pub album_id: Option<i64>,
     pub duration_ms: i64,
     pub sample_rate: Option<i64>,
     pub bit_depth: Option<i64>,
     pub channels: Option<i64>,
     pub codec: Option<String>,
+    pub disc_no: Option<i64>,
     pub track_no: Option<i64>,
 }
 
+const TRACK_ROW_COLUMNS: &str = "t.id, t.title, ar.name, al.title, t.album_id, t.duration_ms, \
+    t.sample_rate, t.bit_depth, t.channels, t.codec, t.disc_no, t.track_no";
+
+fn track_row_from(row: &rusqlite::Row) -> rusqlite::Result<TrackRow> {
+    Ok(TrackRow {
+        id: row.get(0)?,
+        title: row.get(1)?,
+        artist: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+        album: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+        album_id: row.get(4)?,
+        duration_ms: row.get(5)?,
+        sample_rate: row.get(6)?,
+        bit_depth: row.get(7)?,
+        channels: row.get(8)?,
+        codec: row.get(9)?,
+        disc_no: row.get(10)?,
+        track_no: row.get(11)?,
+    })
+}
+
 pub fn list_all(conn: &Connection) -> Result<Vec<TrackRow>, AppError> {
-    let mut stmt = conn.prepare(
-        "SELECT t.id, t.title, ar.name, al.title, t.duration_ms, t.sample_rate, t.bit_depth, t.channels, t.codec, t.track_no
+    let sql = format!(
+        "SELECT {TRACK_ROW_COLUMNS}
          FROM tracks t
          LEFT JOIN artists ar ON ar.id = t.track_artist_id
          LEFT JOIN albums al ON al.id = t.album_id
-         ORDER BY ar.sort_name, ar.name, al.title, t.disc_no, t.track_no",
-    )?;
-    let rows = stmt.query_map([], |row| {
-        Ok(TrackRow {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            artist: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
-            album: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
-            duration_ms: row.get(4)?,
-            sample_rate: row.get(5)?,
-            bit_depth: row.get(6)?,
-            channels: row.get(7)?,
-            codec: row.get(8)?,
-            track_no: row.get(9)?,
-        })
-    })?;
+         ORDER BY ar.sort_name, ar.name, al.title, t.disc_no, t.track_no"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map([], track_row_from)?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
+}
+
+pub fn list_by_album(conn: &Connection, album_id: i64) -> Result<Vec<TrackRow>, AppError> {
+    let sql = format!(
+        "SELECT {TRACK_ROW_COLUMNS}
+         FROM tracks t
+         LEFT JOIN artists ar ON ar.id = t.track_artist_id
+         LEFT JOIN albums al ON al.id = t.album_id
+         WHERE t.album_id = ?1
+         ORDER BY t.disc_no, t.track_no"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map([album_id], track_row_from)?;
     rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
 }
