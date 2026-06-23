@@ -16,3 +16,8 @@ pub fn list_enabled(conn: &Connection) -> Result<Vec<String>, AppError> {
     let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
     rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
 }
+
+pub fn has_enabled(conn: &Connection) -> Result<bool, AppError> {
+    let count: i64 = conn.query_row("SELECT COUNT(*) FROM scan_roots WHERE enabled = 1", [], |row| row.get(0))?;
+    Ok(count > 0)
+}

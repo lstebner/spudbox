@@ -1,5 +1,13 @@
 <script lang="ts">
+  import { open } from "@tauri-apps/plugin-dialog";
   import { library } from "$lib/stores/library.svelte";
+
+  async function addFolder() {
+    const path = await open({ directory: true, multiple: false, title: "Choose a music folder" });
+    if (typeof path === "string") {
+      await library.addFolder(path);
+    }
+  }
 </script>
 
 <nav class="artist-list">
@@ -23,6 +31,7 @@
 </nav>
 
 <div class="rescan">
+  <button onclick={addFolder} disabled={library.loading}>Add Music Folder</button>
   <button onclick={() => library.rescan()} disabled={library.loading}>
     {library.loading ? "Scanning…" : "Rescan Library"}
   </button>
@@ -76,6 +85,9 @@
   .rescan {
     margin-top: auto;
     padding: 0.75em 0.5em;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4em;
   }
 
   .rescan button {

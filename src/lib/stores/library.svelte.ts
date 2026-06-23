@@ -8,6 +8,7 @@ function createLibraryStore() {
   let selectedArtistId = $state<number | null>(null);
   let selectedAlbumId = $state<number | null>(null);
   let loading = $state(false);
+  let hasRoots = $state(true);
 
   async function loadAlbums() {
     albums = await commands.libraryGetAlbums(selectedArtistId);
@@ -31,6 +32,7 @@ function createLibraryStore() {
   async function refresh() {
     loading = true;
     try {
+      hasRoots = await commands.libraryHasRoots();
       artists = await commands.libraryGetArtists();
       await loadAlbums();
     } finally {
@@ -41,6 +43,17 @@ function createLibraryStore() {
   async function rescan() {
     loading = true;
     try {
+      await commands.libraryScan();
+      await refresh();
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function addFolder(path: string) {
+    loading = true;
+    try {
+      await commands.libraryAddRoot(path);
       await commands.libraryScan();
       await refresh();
     } finally {
@@ -67,11 +80,15 @@ function createLibraryStore() {
     get loading() {
       return loading;
     },
+    get hasRoots() {
+      return hasRoots;
+    },
     selectArtist,
     selectAlbum,
     backToAlbums,
     refresh,
     rescan,
+    addFolder,
   };
 }
 

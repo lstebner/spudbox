@@ -18,6 +18,7 @@ use state::AppState;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let app_dir = app
                 .path()
@@ -43,6 +44,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::library::ping,
             commands::library::library_add_root,
+            commands::library::library_has_roots,
             commands::library::library_scan,
             commands::library::library_get_tracks,
             commands::library::library_get_tracks_by_album,

@@ -39,4 +39,5 @@ rodio = { version = "0.20", default-features = false, features = ["symphonia-all
 cpal = "0.15"
 rubato = "0.15"
 souvlaki = { version = "0.7", default-features = false, features = ["use_zbus"] }
+tauri-plugin-dialog = "2.7.1"
 

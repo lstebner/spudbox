@@ -47,6 +47,12 @@
   }
 </script>
 
+{#if !library.hasRoots}
+  <div class="empty-state">
+    <p>No music folder added yet.</p>
+    <p>Use "Add Music Folder" in the sidebar to get started.</p>
+  </div>
+{:else}
 <div bind:this={scrollEl} class="grid-scroll">
   <div class="grid-inner" style="height: {$virtualizer.getTotalSize()}px;">
     {#each $virtualizer.getVirtualItems() as row (row.key)}
@@ -68,8 +74,21 @@
     {/each}
   </div>
 </div>
+{/if}
 
 <style>
+  .empty-state {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25em;
+    color: var(--text-secondary);
+    text-align: center;
+  }
+
   .grid-scroll {
     position: absolute;
     inset: 0;

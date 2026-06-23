@@ -5,6 +5,7 @@ export const commands = {
   ping: () => invoke<string>("ping"),
 
   libraryAddRoot: (path: string) => invoke<void>("library_add_root", { path }),
+  libraryHasRoots: () => invoke<boolean>("library_has_roots"),
   libraryScan: () => invoke<ScanResult>("library_scan"),
   libraryGetArtists: () => invoke<ArtistRow[]>("library_get_artists"),
   libraryGetAlbums: (artistId: number | null) =>
