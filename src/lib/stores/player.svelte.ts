@@ -27,11 +27,17 @@ function createPlayerStore() {
     get snapshot() {
       return snapshot;
     },
-    playTrack(trackId: number) {
-      return commands.playbackPlayTrack(trackId);
+    playQueue(trackIds: number[], startIndex: number) {
+      return commands.playbackPlayQueue(trackIds, startIndex);
     },
     togglePlayPause() {
       return snapshot.state === "playing" ? commands.playbackPause() : commands.playbackPlay();
+    },
+    next() {
+      return commands.playbackNext();
+    },
+    previous() {
+      return commands.playbackPrevious();
     },
     seek(positionMs: number) {
       return commands.playbackSeek(positionMs);

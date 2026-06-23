@@ -70,9 +70,9 @@ fn handle_event(player: &PlayerHandle, event: MediaControlEvent) {
         MediaControlEvent::SetVolume(volume) => {
             player.send(PlayerCommand::SetVolume(volume as f32));
         }
+        MediaControlEvent::Next => player.send(PlayerCommand::Next),
+        MediaControlEvent::Previous => player.send(PlayerCommand::Previous),
         MediaControlEvent::Stop
-        | MediaControlEvent::Next
-        | MediaControlEvent::Previous
         | MediaControlEvent::OpenUri(_)
         | MediaControlEvent::Raise
         | MediaControlEvent::Quit => {}

@@ -1,5 +1,8 @@
 mod decode;
 mod engine;
+mod queue;
+
+pub use queue::Queue;
 
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -61,9 +64,11 @@ pub struct TrackInfo {
 }
 
 pub enum PlayerCommand {
-    PlayPath(TrackInfo),
+    SetQueue(Vec<TrackInfo>, usize),
     Play,
     Pause,
+    Next,
+    Previous,
     Seek(Duration),
     SetVolume(f32),
 }

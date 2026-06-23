@@ -109,6 +109,7 @@ pub fn sample_path_for_album(conn: &Connection, album_id: i64) -> Result<Option<
 }
 
 pub struct PlayableTrack {
+    pub id: i64,
     pub path: String,
     pub duration_ms: i64,
     pub title: String,
@@ -117,26 +118,47 @@ pub struct PlayableTrack {
     pub art_path: Option<String>,
 }
 
-pub fn get_playable(conn: &Connection, track_id: i64) -> Result<PlayableTrack, AppError> {
-    conn.query_row(
-        "SELECT t.path, t.duration_ms, t.title, ar.name, al.title, al.art_path
+fn playable_track_from(row: &rusqlite::Row) -> rusqlite::Result<PlayableTrack> {
+    Ok(PlayableTrack {
+        id: row.get(0)?,
+        path: row.get(1)?,
+        duration_ms: row.get(2)?,
+        title: row.get(3)?,
+        artist: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+        album: row.get::<_, Option<String>>(5)?.unwrap_or_default(),
+        art_path: row.get(6)?,
+    })
+}
+
+const PLAYABLE_TRACK_COLUMNS: &str =
+    "t.id, t.path, t.duration_ms, t.title, ar.name, al.title, al.art_path";
+
+/// Resolves a batch of track ids to their playable info, preserving the
+/// order of `track_ids` (a plain `WHERE id IN (...)` does not) since that
+/// order is the playback queue order.
+pub fn get_playable_batch(conn: &Connection, track_ids: &[i64]) -> Result<Vec<PlayableTrack>, AppError> {
+    if track_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let placeholders = track_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let sql = format!(
+        "SELECT {PLAYABLE_TRACK_COLUMNS}
          FROM tracks t
          LEFT JOIN artists ar ON ar.id = t.track_artist_id
          LEFT JOIN albums al ON al.id = t.album_id
-         WHERE t.id = ?1",
-        [track_id],
-        |row| {
-            Ok(PlayableTrack {
-                path: row.get(0)?,
-                duration_ms: row.get(1)?,
-                title: row.get(2)?,
-                artist: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
-                album: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
-                art_path: row.get(5)?,
-            })
-        },
-    )
-    .map_err(AppError::from)
+         WHERE t.id IN ({placeholders})"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let params = rusqlite::params_from_iter(track_ids.iter());
+    let rows = stmt.query_map(params, playable_track_from)?;
+
+    let mut by_id: HashMap<i64, PlayableTrack> = HashMap::new();
+    for row in rows {
+        let track = row?;
+        by_id.insert(track.id, track);
+    }
+
+    Ok(track_ids.iter().filter_map(|id| by_id.remove(id)).collect())
 }
 
 pub fn delete_by_paths(conn: &Connection, paths: &[String]) -> Result<usize, AppError> {

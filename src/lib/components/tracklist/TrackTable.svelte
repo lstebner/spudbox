@@ -27,6 +27,10 @@
       overscan: 10,
     });
   });
+
+  function playFrom(index: number) {
+    player.playQueue(library.tracks.map((t) => t.id), index);
+  }
 </script>
 
 <div class="track-view">
@@ -55,7 +59,7 @@
           class="track-row"
           class:playing={t.id === player.snapshot.track_id}
           style="transform: translateY({row.start}px); height: {ROW_HEIGHT}px;"
-          onclick={() => player.playTrack(t.id)}
+          onclick={() => playFrom(row.index)}
         >
           <span class="col-no">{t.track_no ?? ""}</span>
           <span class="col-title">{t.title}</span>

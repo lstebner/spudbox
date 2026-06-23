@@ -9,20 +9,40 @@ use crate::error::AppError;
 use crate::state::AppState;
 
 #[tauri::command]
-pub fn playback_play_track(state: State<AppState>, track_id: i64) -> Result<(), AppError> {
-    let track = {
+pub fn playback_play_queue(
+    state: State<AppState>,
+    track_ids: Vec<i64>,
+    start_index: usize,
+) -> Result<(), AppError> {
+    let playable = {
         let conn = state.db.get()?;
-        tracks::get_playable(&conn, track_id)?
+        tracks::get_playable_batch(&conn, &track_ids)?
     };
-    state.player.send(PlayerCommand::PlayPath(TrackInfo {
-        track_id,
-        path: PathBuf::from(track.path),
-        duration_ms: track.duration_ms as u64,
-        title: track.title,
-        artist: track.artist,
-        album: track.album,
-        art_path: track.art_path,
-    }));
+    let queue: Vec<TrackInfo> = playable
+        .into_iter()
+        .map(|t| TrackInfo {
+            track_id: t.id,
+            path: PathBuf::from(t.path),
+            duration_ms: t.duration_ms as u64,
+            title: t.title,
+            artist: t.artist,
+            album: t.album,
+            art_path: t.art_path,
+        })
+        .collect();
+    state.player.send(PlayerCommand::SetQueue(queue, start_index));
+    Ok(())
+}
+
+#[tauri::command]
+pub fn playback_next(state: State<AppState>) -> Result<(), AppError> {
+    state.player.send(PlayerCommand::Next);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn playback_previous(state: State<AppState>) -> Result<(), AppError> {
+    state.player.send(PlayerCommand::Previous);
     Ok(())
 }
 

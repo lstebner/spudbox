@@ -39,11 +39,27 @@
 
   <div class="controls">
     <button
+      class="skip"
+      disabled={!player.snapshot.track_id}
+      onclick={() => player.previous()}
+      aria-label="Previous"
+    >
+      ⏮
+    </button>
+    <button
       class="play-pause"
       disabled={!player.snapshot.track_id}
       onclick={() => player.togglePlayPause()}
     >
       {player.snapshot.state === "playing" ? "❙❙" : "▶"}
+    </button>
+    <button
+      class="skip"
+      disabled={!player.snapshot.track_id}
+      onclick={() => player.next()}
+      aria-label="Next"
+    >
+      ⏭
     </button>
     <div class="scrubber">
       <span class="time">{formatDuration(seeking ? seekValue : player.snapshot.position_ms)}</span>
@@ -155,6 +171,28 @@
 
   .play-pause:disabled {
     background: var(--bg-hover);
+    color: var(--text-tertiary);
+    cursor: default;
+  }
+
+  .skip {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .skip:hover:not(:disabled) {
+    color: var(--text-primary);
+  }
+
+  .skip:disabled {
     color: var(--text-tertiary);
     cursor: default;
   }

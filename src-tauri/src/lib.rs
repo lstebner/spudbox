@@ -48,9 +48,11 @@ pub fn run() {
             commands::library::library_get_tracks_by_album,
             commands::library::library_get_artists,
             commands::library::library_get_albums,
-            commands::playback::playback_play_track,
+            commands::playback::playback_play_queue,
             commands::playback::playback_play,
             commands::playback::playback_pause,
+            commands::playback::playback_next,
+            commands::playback::playback_previous,
             commands::playback::playback_seek,
             commands::playback::playback_set_volume,
             commands::playback::playback_get_snapshot

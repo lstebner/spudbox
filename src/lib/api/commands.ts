@@ -13,9 +13,12 @@ export const commands = {
   libraryGetTracksByAlbum: (albumId: number) =>
     invoke<TrackRow[]>("library_get_tracks_by_album", { albumId }),
 
-  playbackPlayTrack: (trackId: number) => invoke<void>("playback_play_track", { trackId }),
+  playbackPlayQueue: (trackIds: number[], startIndex: number) =>
+    invoke<void>("playback_play_queue", { trackIds, startIndex }),
   playbackPlay: () => invoke<void>("playback_play"),
   playbackPause: () => invoke<void>("playback_pause"),
+  playbackNext: () => invoke<void>("playback_next"),
+  playbackPrevious: () => invoke<void>("playback_previous"),
   playbackSeek: (positionMs: number) => invoke<void>("playback_seek", { positionMs }),
   playbackSetVolume: (volume: number) => invoke<void>("playback_set_volume", { volume }),
   playbackGetSnapshot: () => invoke<PlaybackSnapshot>("playback_get_snapshot"),
