@@ -1,6 +1,8 @@
 mod commands;
 mod db;
 mod error;
+mod events;
+mod scanner;
 mod state;
 
 use tauri::Manager;
@@ -28,7 +30,12 @@ pub fn run() {
             app.manage(AppState { db: pool });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![commands::library::ping])
+        .invoke_handler(tauri::generate_handler![
+            commands::library::ping,
+            commands::library::library_add_root,
+            commands::library::library_scan,
+            commands::library::library_get_tracks
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
