@@ -4,6 +4,11 @@ import type { AlbumRow, ArtistRow, TrackRow } from "$lib/types";
 function createLibraryStore() {
   let artists = $state<ArtistRow[]>([]);
   let albums = $state<AlbumRow[]>([]);
+  // Always the complete, unfiltered album list (unlike `albums`, which is
+  // scoped to whatever artist is currently selected for the main grid) so
+  // the sidebar can group/search across every artist's albums regardless
+  // of what's currently browsed in the main view.
+  let allAlbums = $state<AlbumRow[]>([]);
   let tracks = $state<TrackRow[]>([]);
   let selectedArtistId = $state<number | null>(null);
   let selectedAlbumId = $state<number | null>(null);
@@ -12,6 +17,10 @@ function createLibraryStore() {
 
   async function loadAlbums() {
     albums = await commands.libraryGetAlbums(selectedArtistId);
+  }
+
+  async function loadAllAlbums() {
+    allAlbums = await commands.libraryGetAlbums(null);
   }
 
   async function selectArtist(artistId: number | null) {
@@ -35,6 +44,16 @@ function createLibraryStore() {
     selectedAlbumId = null;
   }
 
+  // Like selectAlbum, but also sets the artist filter first so "back to
+  // albums" lands on that artist's albums rather than resetting to "All
+  // Albums" — used when navigating into an album from its artist's
+  // expanded sublist in the sidebar, where that context is already known.
+  async function selectArtistAndAlbum(artistId: number, albumId: number) {
+    selectedArtistId = artistId;
+    await loadAlbums();
+    await selectAlbum(albumId);
+  }
+
   // Navigates to an album's track list regardless of the currently
   // selected artist filter (e.g. from the now-playing bar, which can
   // point at an album outside whatever's currently browsed) by resetting
@@ -52,6 +71,7 @@ function createLibraryStore() {
       hasRoots = await commands.libraryHasRoots();
       artists = await commands.libraryGetArtists();
       await loadAlbums();
+      await loadAllAlbums();
     } finally {
       loading = false;
     }
@@ -85,6 +105,9 @@ function createLibraryStore() {
     get albums() {
       return albums;
     },
+    get allAlbums() {
+      return allAlbums;
+    },
     get tracks() {
       return tracks;
     },
@@ -102,6 +125,7 @@ function createLibraryStore() {
     },
     selectArtist,
     selectAlbum,
+    selectArtistAndAlbum,
     goToAlbum,
     backToAlbums,
     refresh,
