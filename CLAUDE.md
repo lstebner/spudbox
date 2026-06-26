@@ -33,7 +33,7 @@ cd src-tauri && cargo test --lib real_library_scan -- --ignored --nocapture
 npm run tauri build -- --bundles deb,appimage
 ```
 
-Linux build prerequisites: `libwebkit2gtk-4.1-dev`, `libasound2-dev` (confirmed minimal set; other generically-recommended Tauri prereqs like `libxdo-dev` are not actually needed by this dependency tree).
+Linux build prerequisites: `libwebkit2gtk-4.1-dev`, `libasound2-dev`, `libdbus-1-dev`, `pkg-config` (confirmed minimal set; other generically-recommended Tauri prereqs like `libxdo-dev` are not actually needed by this dependency tree).
 
 CI (`.github/workflows/ci.yml`) runs both test suites on `pull_request` to `main` only — it does not run on direct pushes.
 

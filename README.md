@@ -22,7 +22,11 @@ A custom music player for Linux, built as a nicer alternative to Clementine: lib
 
 - Rust (via [rustup](https://rustup.rs))
 - Node.js + npm
-- System packages: `libwebkit2gtk-4.1-dev`, `libasound2-dev`, plus the usual Tauri Linux build prerequisites ([full list](https://tauri.app/start/prerequisites/))
+- System packages (Ubuntu/Debian):
+  ```
+  sudo apt install libwebkit2gtk-4.1-dev libasound2-dev libdbus-1-dev pkg-config
+  ```
+  Note: the generic Tauri prereq list includes several packages (`libxdo-dev`, `libayatana-appindicator3-dev`, etc.) that this project does not actually need.
 
 ## Development
 
