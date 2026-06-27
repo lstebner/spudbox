@@ -15,12 +15,18 @@ pub struct PendingRating {
 }
 
 pub struct PendingPlay {
-    pub path: String,
+    pub track_id: i64,
+    pub album_title: String,
+    pub album_artist: String,
+    pub year_str: String,
+    pub track_title: String,
+    pub disc_no: i64,
+    pub track_no: i64,
     pub own_play_count: i64,
     pub last_played: Option<i64>,
 }
 
-/// Reads all locally rated albums that have a real updated_at timestamp.
+/// Reads all locally rated albums.
 pub fn collect_pending_ratings(conn: &Connection) -> Result<Vec<PendingRating>, SyncError> {
     let mut stmt = conn
         .prepare(
@@ -51,9 +57,19 @@ pub fn collect_pending_ratings(conn: &Connection) -> Result<Vec<PendingRating>, 
 pub fn collect_pending_plays(conn: &Connection) -> Result<Vec<PendingPlay>, SyncError> {
     let mut stmt = conn
         .prepare(
-            "SELECT t.path, ts.own_play_count, ts.last_played
+            "SELECT ts.track_id,
+                    al.title,
+                    ar.name,
+                    COALESCE(CAST(al.year AS TEXT), ''),
+                    t.title,
+                    COALESCE(t.disc_no, 1),
+                    COALESCE(t.track_no, 0),
+                    ts.own_play_count,
+                    ts.last_played
              FROM track_stats ts
-             JOIN tracks t ON t.id = ts.track_id
+             JOIN tracks t  ON t.id  = ts.track_id
+             JOIN albums al ON al.id = t.album_id
+             JOIN artists ar ON ar.id = al.album_artist_id
              WHERE ts.own_play_count > ts.synced_play_count",
         )
         .map_err(|e| SyncError::Db(e.to_string()))?;
@@ -61,9 +77,15 @@ pub fn collect_pending_plays(conn: &Connection) -> Result<Vec<PendingPlay>, Sync
     let rows: Result<Vec<PendingPlay>, rusqlite::Error> = stmt
         .query_map([], |row| {
             Ok(PendingPlay {
-                path: row.get(0)?,
-                own_play_count: row.get(1)?,
-                last_played: row.get(2)?,
+                track_id: row.get(0)?,
+                album_title: row.get(1)?,
+                album_artist: row.get(2)?,
+                year_str: row.get(3)?,
+                track_title: row.get(4)?,
+                disc_no: row.get(5)?,
+                track_no: row.get(6)?,
+                own_play_count: row.get(7)?,
+                last_played: row.get(8)?,
             })
         })
         .map_err(|e| SyncError::Db(e.to_string()))?
@@ -117,15 +139,22 @@ pub async fn upload_plays(
         .map(|p| {
             (
                 "INSERT INTO cloud_track_plays
-                     (track_path, machine_id, own_play_count, last_played, updated_at)
-                 VALUES (?, ?, ?, ?, ?)
-                 ON CONFLICT(track_path, machine_id) DO UPDATE SET
+                     (album_title, album_artist, year_str, track_title, disc_no, track_no,
+                      machine_id, own_play_count, last_played, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(album_title, album_artist, year_str, track_title, disc_no, track_no, machine_id)
+                 DO UPDATE SET
                      own_play_count = excluded.own_play_count,
                      last_played    = excluded.last_played,
                      updated_at     = excluded.updated_at"
                     .to_string(),
                 vec![
-                    text_arg(&p.path),
+                    text_arg(&p.album_title),
+                    text_arg(&p.album_artist),
+                    text_arg(&p.year_str),
+                    text_arg(&p.track_title),
+                    int_arg(p.disc_no),
+                    int_arg(p.track_no),
                     text_arg(machine_id),
                     int_arg(p.own_play_count),
                     opt_int_arg(p.last_played),
@@ -137,7 +166,7 @@ pub async fn upload_plays(
     client.execute_batch(stmts).await
 }
 
-/// Marks the given track paths as fully synced (synced_play_count = own_play_count).
+/// Marks the given tracks as fully synced (synced_play_count = own_play_count).
 pub fn mark_plays_synced(conn: &Connection, plays: &[PendingPlay]) -> Result<(), SyncError> {
     if plays.is_empty() {
         return Ok(());
@@ -145,11 +174,11 @@ pub fn mark_plays_synced(conn: &Connection, plays: &[PendingPlay]) -> Result<(),
     let placeholders: Vec<String> = (1..=plays.len()).map(|i| format!("?{i}")).collect();
     let sql = format!(
         "UPDATE track_stats SET synced_play_count = own_play_count
-         WHERE track_id IN (SELECT id FROM tracks WHERE path IN ({}))",
+         WHERE track_id IN ({})",
         placeholders.join(", ")
     );
-    let paths: Vec<&str> = plays.iter().map(|p| p.path.as_str()).collect();
-    conn.execute(&sql, rusqlite::params_from_iter(paths.iter()))
+    let ids: Vec<i64> = plays.iter().map(|p| p.track_id).collect();
+    conn.execute(&sql, rusqlite::params_from_iter(ids.iter()))
         .map_err(|e| SyncError::Db(e.to_string()))?;
     Ok(())
 }

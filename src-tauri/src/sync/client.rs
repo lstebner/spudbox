@@ -36,6 +36,16 @@ impl TursoClient {
         Ok(())
     }
 
+    pub async fn query_scalar_int(&self, sql: &str, args: Vec<Value>) -> Result<i64, SyncError> {
+        let result = self.query(sql, args).await?;
+        result
+            .rows
+            .first()
+            .and_then(|row| row.first())
+            .and_then(row_int)
+            .ok_or_else(|| SyncError::UnexpectedResponse("expected scalar integer result".into()))
+    }
+
     pub async fn execute_batch(&self, stmts: Vec<(String, Vec<Value>)>) -> Result<(), SyncError> {
         if stmts.is_empty() {
             return Ok(());

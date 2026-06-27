@@ -1,6 +1,6 @@
 <script lang="ts">
   import { X } from "@lucide/svelte";
-  import { open } from "@tauri-apps/plugin-dialog";
+  import { open, confirm } from "@tauri-apps/plugin-dialog";
   import { library } from "$lib/stores/library.svelte";
   import { commands } from "$lib/api/commands";
   import type { SyncStatus, SyncStats } from "$lib/types";
@@ -31,6 +31,11 @@
   }
 
   async function removeFolder(path: string) {
+    const ok = await confirm(
+      `Remove "${path}" from your library?\n\nAll tracks, play counts, and ratings for this folder will be deleted. This cannot be undone (unless cloud sync is configured).`,
+      { title: "Remove music folder", kind: "warning" }
+    );
+    if (!ok) return;
     await commands.libraryRemoveRoot(path);
     roots = await commands.libraryListRoots();
     await library.refresh();
@@ -335,6 +340,7 @@
     font-family: monospace;
     color: var(--text-primary);
   }
+
 
   label {
     display: flex;

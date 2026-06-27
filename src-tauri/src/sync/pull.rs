@@ -1,7 +1,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use super::{
-    client::{row_float, row_int, row_text, text_arg, TursoClient},
+    client::{int_arg, row_float, row_int, row_text, text_arg, TursoClient},
     SyncError,
 };
 
@@ -14,7 +14,12 @@ pub struct CloudRating {
 }
 
 pub struct CloudPlay {
-    pub track_path: String,
+    pub album_title: String,
+    pub album_artist: String,
+    pub year_str: String,
+    pub track_title: String,
+    pub disc_no: i64,
+    pub track_no: i64,
     /// SUM of all machines' own_play_count except this one.
     pub other_count: i64,
     /// MAX(last_played) across all machines.
@@ -46,29 +51,41 @@ pub async fn fetch_cloud_plays(
     client: &TursoClient,
     machine_id: &str,
 ) -> Result<Vec<CloudPlay>, SyncError> {
-    // Sum all machines' counts; subtract this machine's own contribution
-    // to get the other machines' total.
     let result = client
         .query(
-            "SELECT track_path,
+            "SELECT album_title, album_artist, year_str, track_title, disc_no, track_no,
                     SUM(own_play_count) AS total,
                     MAX(last_played)    AS latest,
                     SUM(CASE WHEN machine_id = ? THEN own_play_count ELSE 0 END) AS my_count
              FROM cloud_track_plays
-             GROUP BY track_path",
+             GROUP BY album_title, album_artist, year_str, track_title, disc_no, track_no",
             vec![text_arg(machine_id)],
         )
         .await?;
 
     let mut out = Vec::new();
     for row in &result.rows {
-        let path = row_text(&row[0]).unwrap_or("").to_string();
-        let total = row_int(&row[1]).unwrap_or(0);
-        let latest_played = row_int(&row[2]);
-        let my_count = row_int(&row[3]).unwrap_or(0);
+        let album_title = row_text(&row[0]).unwrap_or("").to_string();
+        let album_artist = row_text(&row[1]).unwrap_or("").to_string();
+        let year_str = row_text(&row[2]).unwrap_or("").to_string();
+        let track_title = row_text(&row[3]).unwrap_or("").to_string();
+        let disc_no = row_int(&row[4]).unwrap_or(1);
+        let track_no = row_int(&row[5]).unwrap_or(0);
+        let total = row_int(&row[6]).unwrap_or(0);
+        let latest_played = row_int(&row[7]);
+        let my_count = row_int(&row[8]).unwrap_or(0);
         let other_count = total - my_count;
         if other_count > 0 || latest_played.is_some() {
-            out.push(CloudPlay { track_path: path, other_count, latest_played });
+            out.push(CloudPlay {
+                album_title,
+                album_artist,
+                year_str,
+                track_title,
+                disc_no,
+                track_no,
+                other_count,
+                latest_played,
+            });
         }
     }
     Ok(out)
@@ -132,10 +149,24 @@ pub fn apply_plays(conn: &Connection, plays: &[CloudPlay]) -> Result<usize, Sync
             continue;
         }
 
+        let year: Option<i64> = if cp.year_str.is_empty() {
+            None
+        } else {
+            cp.year_str.parse().ok()
+        };
+
         let track_id: Option<i64> = conn
             .query_row(
-                "SELECT id FROM tracks WHERE path = ?1",
-                [&cp.track_path],
+                "SELECT t.id FROM tracks t
+                 JOIN albums al  ON al.id  = t.album_id
+                 JOIN artists ar ON ar.id  = al.album_artist_id
+                 WHERE al.title  = ?1
+                   AND ar.name   = ?2
+                   AND ((?3 IS NULL AND al.year IS NULL) OR al.year = ?3)
+                   AND t.title   = ?4
+                   AND COALESCE(t.disc_no,  1) = ?5
+                   AND COALESCE(t.track_no, 0) = ?6",
+                params![cp.album_title, cp.album_artist, year, cp.track_title, cp.disc_no, cp.track_no],
                 |row| row.get(0),
             )
             .optional()
@@ -143,9 +174,6 @@ pub fn apply_plays(conn: &Connection, plays: &[CloudPlay]) -> Result<usize, Sync
 
         let Some(track_id) = track_id else { continue };
 
-        // Insert a stats row if one doesn't exist, or update the existing one.
-        // play_count = own_play_count + other machines' total
-        // last_played = MAX(local, cloud)
         conn.execute(
             "INSERT INTO track_stats
                  (track_id, play_count, own_play_count, last_played, rating, is_favorite)
