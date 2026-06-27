@@ -9,6 +9,10 @@
   let { children } = $props();
   let showSettings = $state(false);
 
+  $effect(() => {
+    if (library.selectedAlbumId !== null) showSettings = false;
+  });
+
   library.refresh().then(() => library.rescan());
 </script>
 
