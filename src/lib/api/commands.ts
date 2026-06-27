@@ -6,6 +6,8 @@ export const commands = {
 
   libraryAddRoot: (path: string) => invoke<void>("library_add_root", { path }),
   libraryHasRoots: () => invoke<boolean>("library_has_roots"),
+  libraryListRoots: () => invoke<string[]>("library_list_roots"),
+  libraryRemoveRoot: (path: string) => invoke<void>("library_remove_root", { path }),
   libraryScan: () => invoke<ScanResult>("library_scan"),
   libraryGetArtists: () => invoke<ArtistRow[]>("library_get_artists"),
   libraryGetAlbums: (artistId: number | null) =>

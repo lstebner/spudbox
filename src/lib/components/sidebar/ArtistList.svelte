@@ -1,18 +1,10 @@
 <script lang="ts">
-  import { open } from "@tauri-apps/plugin-dialog";
   import { ChevronDown, ChevronRight } from "@lucide/svelte";
   import { library } from "$lib/stores/library.svelte";
   import type { AlbumRow } from "$lib/types";
 
   let query = $state("");
   let manuallyExpanded = $state(new Set<number>());
-
-  async function addFolder() {
-    const path = await open({ directory: true, multiple: false, title: "Choose a music folder" });
-    if (typeof path === "string") {
-      await library.addFolder(path);
-    }
-  }
 
   function toggleExpanded(artistId: number) {
     const next = new Set(manuallyExpanded);
@@ -126,12 +118,6 @@
   {/each}
 </nav>
 
-<div class="rescan">
-  <button onclick={addFolder} disabled={library.loading}>Add Music Folder</button>
-  <button onclick={() => library.rescan()} disabled={library.loading}>
-    {library.loading ? "Scanning…" : "Rescan Library"}
-  </button>
-</div>
 
 <style>
   .search {
@@ -253,31 +239,4 @@
     color: var(--text-primary);
   }
 
-  .rescan {
-    margin-top: auto;
-    padding: 0.75em 0.5em;
-    display: flex;
-    flex-direction: column;
-    gap: 0.4em;
-  }
-
-  .rescan button {
-    width: 100%;
-    background: none;
-    border: 1px solid var(--border);
-    color: var(--text-secondary);
-    padding: 0.5em;
-    border-radius: var(--radius);
-    cursor: pointer;
-  }
-
-  .rescan button:hover:not(:disabled) {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-  }
-
-  .rescan button:disabled {
-    cursor: default;
-    opacity: 0.6;
-  }
 </style>

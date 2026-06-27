@@ -64,7 +64,7 @@
 {#if !library.hasRoots}
   <div class="empty-state">
     <p>No music folder added yet.</p>
-    <p>Use "Add Music Folder" in the sidebar to get started.</p>
+    <p>Use "Add Music Folder" in Settings to get started.</p>
   </div>
 {:else}
 <div bind:this={scrollEl} class="grid-scroll">

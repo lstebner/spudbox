@@ -37,6 +37,18 @@ pub fn library_has_roots(state: State<AppState>) -> Result<bool, AppError> {
     scan_roots::has_enabled(&conn)
 }
 
+#[tauri::command]
+pub fn library_list_roots(state: State<AppState>) -> Result<Vec<String>, AppError> {
+    let conn = state.db.get()?;
+    scan_roots::list_enabled(&conn)
+}
+
+#[tauri::command]
+pub fn library_remove_root(state: State<AppState>, path: String) -> Result<(), AppError> {
+    let conn = state.db.get()?;
+    scan_roots::remove(&conn, &path)
+}
+
 /// Async so the genuinely slow work (a fresh scan of thousands of files, or
 /// first-time art backfill doing hundreds of image decode/resize/encode
 /// round trips) runs on Tauri's dedicated blocking-task pool rather than

@@ -1,14 +1,14 @@
 <script lang="ts">
   import "$lib/styles/theme.css";
+  import { Settings } from "@lucide/svelte";
   import ArtistList from "$lib/components/sidebar/ArtistList.svelte";
   import TransportBar from "$lib/components/transport/TransportBar.svelte";
+  import SettingsPanel from "$lib/components/settings/SettingsPanel.svelte";
   import { library } from "$lib/stores/library.svelte";
 
   let { children } = $props();
+  let showSettings = $state(false);
 
-  // Show whatever's already in the DB immediately, then kick off a scan in
-  // the background (cheap if nothing changed) so the view updates if
-  // anything's new without blocking startup on it.
   library.refresh().then(() => library.rescan());
 </script>
 
@@ -17,7 +17,23 @@
     <ArtistList />
   </aside>
   <main class="content">
-    {@render children()}
+    <div class="toolbar">
+      <button
+        class="cog"
+        class:active={showSettings}
+        onclick={() => (showSettings = !showSettings)}
+        aria-label="Settings"
+      >
+        <Settings size={20} />
+      </button>
+    </div>
+    <div class="content-body">
+      {#if showSettings}
+        <SettingsPanel onclose={() => (showSettings = false)} />
+      {:else}
+        {@render children()}
+      {/if}
+    </div>
   </main>
   <footer class="transport-bar">
     <TransportBar />
@@ -50,6 +66,49 @@
     right: 0;
     bottom: var(--transport-height);
     overflow: hidden;
+  }
+
+  .toolbar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--toolbar-height);
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 0 0.75em;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .cog {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--text-tertiary);
+    cursor: pointer;
+  }
+
+  .cog:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .cog.active {
+    color: var(--accent);
+  }
+
+  .content-body {
+    position: absolute;
+    top: var(--toolbar-height);
+    left: 0;
+    right: 0;
+    bottom: 0;
   }
 
   .transport-bar {

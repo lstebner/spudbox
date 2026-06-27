@@ -22,6 +22,27 @@ pub fn has_enabled(conn: &Connection) -> Result<bool, AppError> {
     Ok(count > 0)
 }
 
+pub fn remove(conn: &Connection, path: &str) -> Result<(), AppError> {
+    // Delete all tracks whose absolute path falls under this root.
+    conn.execute("DELETE FROM tracks WHERE path LIKE ?1 || '/%'", [path])?;
+    // Clean up albums that now have no tracks (album_ratings cascades from albums).
+    conn.execute(
+        "DELETE FROM albums WHERE id NOT IN (SELECT DISTINCT album_id FROM tracks WHERE album_id IS NOT NULL)",
+        [],
+    )?;
+    // Clean up artists that are no longer referenced by any album or track.
+    conn.execute(
+        "DELETE FROM artists WHERE id NOT IN (
+            SELECT DISTINCT album_artist_id FROM albums WHERE album_artist_id IS NOT NULL
+            UNION
+            SELECT DISTINCT track_artist_id FROM tracks WHERE track_artist_id IS NOT NULL
+        )",
+        [],
+    )?;
+    conn.execute("DELETE FROM scan_roots WHERE path = ?1", [path])?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

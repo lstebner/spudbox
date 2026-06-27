@@ -63,6 +63,8 @@ pub fn run() {
             commands::library::ping,
             commands::library::library_add_root,
             commands::library::library_has_roots,
+            commands::library::library_list_roots,
+            commands::library::library_remove_root,
             commands::library::library_scan,
             commands::library::library_get_tracks,
             commands::library::library_get_tracks_by_album,
