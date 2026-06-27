@@ -14,9 +14,11 @@ A custom music player for Linux, built as a nicer alternative to Clementine: lib
 - Hi-res playback (24-bit/96kHz+ FLAC and beyond) via a pure-Rust audio stack (`symphonia` + `rodio`/`cpal`) — no GStreamer dependency
 - Gapless playback between queued tracks
 - Album art extraction (embedded or folder cover images), cached as thumbnails
+- 0–10 half-star album ratings, displayed in the grid and track list
 - MPRIS integration (system media keys, GNOME/KDE media widgets)
-- Play history and stats tracked for future "recently played"/"most played" views
+- Play history and stats tracked per track
 - Remembers volume and resumes the last queue/track (paused) on next launch
+- **Cloud sync** — ratings and play counts sync across machines via a [Turso](https://turso.tech) database (free tier); configure once in Settings with a DB URL and auth token
 
 ## Prerequisites (Linux)
 
