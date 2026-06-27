@@ -1,0 +1,67 @@
+name: "Build and Release"
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get short SHA
+        id: slug
+        run: echo "sha8=$(echo ${GITHUB_SHA} | cut -c1-7)" >> $GITHUB_OUTPUT
+
+      - name: Update Version
+        run: |
+          BASE_VERSION=$(jq -r .version package.json)
+          NEW_VERSION="$BASE_VERSION-${{ steps.slug.outputs.sha8 }}"
+
+          # Update package.json version without committing
+          npm version $NEW_VERSION --no-git-tag-version --allow-same-version
+
+          # Update tauri.conf.json version
+          jq ".version = \"$NEW_VERSION\"" src-tauri/tauri.conf.json > src-tauri/tauri.conf.json.tmp && mv src-tauri/tauri.conf.json.tmp src-tauri/tauri.conf.json
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo sudo apt-get install -y libwebkit2gtk-4.1-dev libasound2-dev libdbus-1-dev pkg-config
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build and Release Tauri App
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ steps.slug.outputs.sha8 }}
+          releaseName: "Release ${{ steps.slug.outputs.sha8 }}"
+          releaseBody: "Automated release for commit ${{ steps.slug.outputs.sha8 }}"
+          releaseDraft: true
+          prerelease: false
