@@ -1,7 +1,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use super::{
-    client::{int_arg, row_float, row_int, row_text, text_arg, TursoClient},
+    client::{row_float, row_int, row_text, text_arg, TursoClient},
     SyncError,
 };
 
