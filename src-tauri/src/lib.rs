@@ -6,6 +6,7 @@ mod events;
 mod mpris;
 mod scanner;
 mod state;
+mod sync;
 
 use std::sync::Arc;
 
@@ -13,6 +14,7 @@ use tauri::Manager;
 
 use mpris::Mpris;
 use state::AppState;
+use sync::{SyncConfig, SyncManager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -33,6 +35,22 @@ pub fn run() {
                 db::schema::run_migrations(&mut conn).expect("failed to run migrations");
             }
 
+            // Ensure this machine has a stable identifier, then kick off a
+            // background sync if cloud credentials are configured.
+            {
+                let conn = pool.get().expect("failed to get db connection for sync setup");
+                let config = SyncConfig::from_db(&conn).expect("failed to read sync config");
+                if let Some(config) = config {
+                    let sync_db = pool.clone();
+                    tauri::async_runtime::spawn(async move {
+                        match SyncManager::new(config, sync_db).sync().await {
+                            Ok(stats) => eprintln!("[sync] startup sync done: {stats:?}"),
+                            Err(e) => eprintln!("[sync] startup sync failed: {e}"),
+                        }
+                    });
+                }
+            }
+
             let engine_builder = audio::EngineBuilder::new();
             let player = engine_builder.handle();
             let mpris = Arc::new(Mpris::init(player.clone()).expect("failed to init mpris"));
@@ -51,6 +69,9 @@ pub fn run() {
             commands::library::library_get_artists,
             commands::library::library_get_albums,
             commands::library::library_set_album_rating,
+            commands::sync::sync_configure,
+            commands::sync::sync_status,
+            commands::sync::sync_now,
             commands::playback::playback_play_queue,
             commands::playback::playback_play,
             commands::playback::playback_pause,

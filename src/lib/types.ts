@@ -64,3 +64,15 @@ export type ScanResult = {
   library: ScanStats;
   art: ArtStats;
 };
+
+export type SyncStats = {
+  ratings_pushed: number;
+  ratings_pulled: number;
+  plays_pushed: number;
+  plays_merged: number;
+};
+
+export type SyncStatus = {
+  configured: boolean;
+  machine_id: string;
+};

@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection};
+use rusqlite::{params, OptionalExtension, Connection};
 use serde::Serialize;
 
 use crate::error::AppError;
@@ -58,6 +58,31 @@ pub fn list_missing_art(conn: &Connection) -> Result<Vec<i64>, AppError> {
     let mut stmt = conn.prepare("SELECT id FROM albums WHERE art_source IS NULL")?;
     let rows = stmt.query_map([], |row| row.get::<_, i64>(0))?;
     rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
+}
+
+pub struct AlbumNaturalKey {
+    pub title: String,
+    pub artist: String,
+    pub year: Option<i64>,
+}
+
+pub fn get_natural_key(conn: &Connection, album_id: i64) -> Result<Option<AlbumNaturalKey>, AppError> {
+    conn.query_row(
+        "SELECT al.title, ar.name, al.year
+         FROM albums al
+         JOIN artists ar ON ar.id = al.album_artist_id
+         WHERE al.id = ?1",
+        [album_id],
+        |row| {
+            Ok(AlbumNaturalKey {
+                title: row.get(0)?,
+                artist: row.get(1)?,
+                year: row.get(2)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(AppError::from)
 }
 
 pub fn set_art(conn: &Connection, album_id: i64, art_path: Option<&str>, art_source: &str) -> Result<(), AppError> {

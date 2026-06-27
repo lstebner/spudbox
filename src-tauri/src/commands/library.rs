@@ -4,6 +4,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::db::queries::{album_ratings, albums, artists, scan_roots, tracks};
+use crate::sync::{SyncConfig, SyncManager};
 use crate::error::AppError;
 use crate::events::{ScanProgress, SCAN_PROGRESS};
 use crate::scanner::art::ArtStats;
@@ -110,5 +111,29 @@ pub fn library_set_album_rating(
     rating: Option<f64>,
 ) -> Result<(), AppError> {
     let conn = state.db.get()?;
-    album_ratings::set_rating(&conn, album_id, rating)
+    let updated_at = album_ratings::set_rating(&conn, album_id, rating)?;
+
+    // Fire-and-forget push to cloud — if it fails (offline, unconfigured),
+    // the next startup sync will catch it via the updated_at timestamp.
+    if let (Ok(Some(key)), Ok(Some(config))) = (
+        albums::get_natural_key(&conn, album_id),
+        SyncConfig::from_db(&conn),
+    ) {
+        let db = state.db.clone();
+        tauri::async_runtime::spawn(async move {
+            let manager = SyncManager::new(config, db);
+            if let Err(e) = manager.push_one_album_rating(
+                &key.title,
+                &key.artist,
+                key.year,
+                rating,
+                updated_at,
+            )
+            .await
+            {
+                eprintln!("[sync] push_one_album_rating failed: {e}");
+            }
+        });
+    }
+    Ok(())
 }

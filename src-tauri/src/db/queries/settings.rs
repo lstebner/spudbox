@@ -17,6 +17,29 @@ pub fn set(conn: &Connection, key: &str, value: &str) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Returns the stable per-machine identifier, creating one on first call.
+/// Reads `/etc/machine-id` (present on all systemd Linux installs); falls
+/// back to a pid+nanos string if the file is absent.
+pub fn ensure_machine_id(conn: &Connection) -> Result<String, AppError> {
+    if let Some(id) = get(conn, "machine_id")? {
+        if !id.is_empty() {
+            return Ok(id);
+        }
+    }
+    let id = std::fs::read_to_string("/etc/machine-id")
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|_| {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .subsec_nanos();
+            format!("{:08x}{:08x}", std::process::id(), nanos)
+        });
+    set(conn, "machine_id", &id)?;
+    Ok(id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

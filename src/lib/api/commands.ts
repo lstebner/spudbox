@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AlbumRow, ArtistRow, PlaybackSnapshot, ScanResult, TrackRow } from "$lib/types";
+import type { AlbumRow, ArtistRow, PlaybackSnapshot, ScanResult, SyncStats, SyncStatus, TrackRow } from "$lib/types";
 
 export const commands = {
   ping: () => invoke<string>("ping"),
@@ -25,4 +25,9 @@ export const commands = {
   playbackSeek: (positionMs: number) => invoke<void>("playback_seek", { positionMs }),
   playbackSetVolume: (volume: number) => invoke<void>("playback_set_volume", { volume }),
   playbackGetSnapshot: () => invoke<PlaybackSnapshot>("playback_get_snapshot"),
+
+  syncConfigure: (dbUrl: string, token: string) =>
+    invoke<void>("sync_configure", { dbUrl, token }),
+  syncStatus: () => invoke<SyncStatus>("sync_status"),
+  syncNow: () => invoke<SyncStats>("sync_now"),
 };

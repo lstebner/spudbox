@@ -14,10 +14,11 @@ pub fn record_play(conn: &Connection, track_id: i64, played_at: i64) -> Result<(
         params![track_id, played_at],
     )?;
     conn.execute(
-        "INSERT INTO track_stats (track_id, play_count, last_played, rating, is_favorite)
-         VALUES (?1, 1, ?2, NULL, 0)
+        "INSERT INTO track_stats (track_id, play_count, own_play_count, last_played, rating, is_favorite)
+         VALUES (?1, 1, 1, ?2, NULL, 0)
          ON CONFLICT(track_id) DO UPDATE SET
              play_count = play_count + 1,
+             own_play_count = own_play_count + 1,
              last_played = excluded.last_played",
         params![track_id, played_at],
     )?;

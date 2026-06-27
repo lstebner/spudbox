@@ -54,12 +54,12 @@
     </div>
     <div class="text">
       <div class="title">{player.snapshot.title ?? "Nothing playing"}</div>
-      <div class="artist">{player.snapshot.artist ?? ""}</div>
-      {#if currentAlbum}
-        <div class="rating-row">
-          <StarRating rating={currentAlbum.rating} readonly size={11} />
-        </div>
-      {/if}
+      <div class="artist-row">
+        <span class="artist">{player.snapshot.artist ?? ""}</span>
+        {#if currentAlbum?.rating != null}
+          <StarRating rating={currentAlbum.rating} readonly size={10} />
+        {/if}
+      </div>
     </div>
   </button>
 
@@ -183,16 +183,20 @@
     white-space: nowrap;
   }
 
+  .artist-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4em;
+    overflow: hidden;
+  }
+
   .artist {
     color: var(--text-secondary);
     font-size: 0.8em;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .rating-row {
-    margin-top: 0.3em;
+    min-width: 0;
   }
 
   .controls {
