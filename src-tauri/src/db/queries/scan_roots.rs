@@ -23,15 +23,18 @@ pub fn has_enabled(conn: &Connection) -> Result<bool, AppError> {
 }
 
 pub fn remove(conn: &Connection, path: &str) -> Result<(), AppError> {
-    // Delete all tracks whose absolute path falls under this root.
-    conn.execute("DELETE FROM tracks WHERE path LIKE ?1 || '/%'", [path])?;
-    // Clean up albums that now have no tracks (album_ratings cascades from albums).
-    conn.execute(
+    let tx = conn.unchecked_transaction()?;
+    // substr comparison avoids LIKE's _ and % wildcard interpretation, which
+    // would silently match unintended paths if the folder name contained those chars.
+    tx.execute(
+        "DELETE FROM tracks WHERE substr(path, 1, length(?1) + 1) = ?1 || '/'",
+        [path],
+    )?;
+    tx.execute(
         "DELETE FROM albums WHERE id NOT IN (SELECT DISTINCT album_id FROM tracks WHERE album_id IS NOT NULL)",
         [],
     )?;
-    // Clean up artists that are no longer referenced by any album or track.
-    conn.execute(
+    tx.execute(
         "DELETE FROM artists WHERE id NOT IN (
             SELECT DISTINCT album_artist_id FROM albums WHERE album_artist_id IS NOT NULL
             UNION
@@ -39,7 +42,8 @@ pub fn remove(conn: &Connection, path: &str) -> Result<(), AppError> {
         )",
         [],
     )?;
-    conn.execute("DELETE FROM scan_roots WHERE path = ?1", [path])?;
+    tx.execute("DELETE FROM scan_roots WHERE path = ?1", [path])?;
+    tx.commit()?;
     Ok(())
 }
 

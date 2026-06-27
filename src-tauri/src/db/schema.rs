@@ -9,6 +9,7 @@ pub fn run_migrations(conn: &mut Connection) -> Result<(), AppError> {
         M::up(include_str!("../../migrations/0002_app_settings.sql")),
         M::up(include_str!("../../migrations/0003_album_ratings.sql")),
         M::up(include_str!("../../migrations/0004_sync.sql")),
+        M::up(include_str!("../../migrations/0005_nullable_rating.sql")),
     ]);
     migrations.to_latest(conn)?;
     Ok(())

@@ -21,7 +21,13 @@ pub fn set_rating(conn: &Connection, album_id: i64, rating: Option<f64>) -> Resu
                  updated_at = excluded.updated_at",
             params![album_id, r, now],
         )?,
-        None => conn.execute("DELETE FROM album_ratings WHERE album_id = ?1", params![album_id])?,
+        // Write a tombstone row (rating=NULL, updated_at=now) instead of deleting the row,
+        // so cloud sync can propagate the unrating to other machines via the updated_at LWW.
+        None => conn.execute(
+            "INSERT INTO album_ratings (album_id, rating, updated_at) VALUES (?1, NULL, ?2)
+             ON CONFLICT(album_id) DO UPDATE SET rating = NULL, updated_at = excluded.updated_at",
+            params![album_id, now],
+        )?,
     };
     Ok(now)
 }

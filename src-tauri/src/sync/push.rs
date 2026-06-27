@@ -2,7 +2,7 @@ use rusqlite::Connection;
 use serde_json::Value;
 
 use super::{
-    client::{float_arg, int_arg, opt_int_arg, text_arg, TursoClient},
+    client::{float_arg, int_arg, null_arg, opt_int_arg, text_arg, TursoClient},
     SyncError,
 };
 
@@ -10,7 +10,7 @@ pub struct PendingRating {
     pub title: String,
     pub artist: String,
     pub year_str: String,
-    pub rating: f64,
+    pub rating: Option<f64>, // None = tombstone (was explicitly unrated)
     pub updated_at: i64,
 }
 
@@ -44,7 +44,7 @@ pub fn collect_pending_ratings(conn: &Connection) -> Result<Vec<PendingRating>, 
                 title: row.get(0)?,
                 artist: row.get(1)?,
                 year_str: year.map(|y| y.to_string()).unwrap_or_default(),
-                rating: row.get(3)?,
+                rating: row.get(3)?,  // Option<f64>: None for tombstone rows
                 updated_at: row.get(4)?,
             })
         })
@@ -115,7 +115,7 @@ pub async fn upload_ratings(client: &TursoClient, ratings: &[PendingRating]) -> 
                     text_arg(&r.title),
                     text_arg(&r.artist),
                     text_arg(&r.year_str),
-                    float_arg(r.rating),
+                    match r.rating { Some(v) => float_arg(v), None => null_arg() },
                     int_arg(r.updated_at),
                 ],
             )
@@ -166,20 +166,19 @@ pub async fn upload_plays(
     client.execute_batch(stmts).await
 }
 
-/// Marks the given tracks as fully synced (synced_play_count = own_play_count).
+/// Marks the given tracks as synced up to the count that was actually uploaded.
+/// Uses the captured `own_play_count` from collection time, NOT the current
+/// `own_play_count` — plays that arrive during the HTTP round-trip increment
+/// `own_play_count` further, and those new plays must not be silently consumed.
 pub fn mark_plays_synced(conn: &Connection, plays: &[PendingPlay]) -> Result<(), SyncError> {
-    if plays.is_empty() {
-        return Ok(());
-    }
-    let placeholders: Vec<String> = (1..=plays.len()).map(|i| format!("?{i}")).collect();
-    let sql = format!(
-        "UPDATE track_stats SET synced_play_count = own_play_count
-         WHERE track_id IN ({})",
-        placeholders.join(", ")
-    );
-    let ids: Vec<i64> = plays.iter().map(|p| p.track_id).collect();
-    conn.execute(&sql, rusqlite::params_from_iter(ids.iter()))
+    for p in plays {
+        conn.execute(
+            "UPDATE track_stats SET synced_play_count = ?2
+             WHERE track_id = ?1 AND synced_play_count < ?2",
+            rusqlite::params![p.track_id, p.own_play_count],
+        )
         .map_err(|e| SyncError::Db(e.to_string()))?;
+    }
     Ok(())
 }
 
@@ -217,11 +216,22 @@ pub async fn push_one_album_rating(
                 .await
         }
         None => {
+            // Tombstone: write NULL rating with current timestamp so other machines
+            // can learn about this deletion on their next pull.
             client
                 .execute(
-                    "DELETE FROM cloud_album_ratings
-                     WHERE album_title = ? AND album_artist = ? AND year_str = ?",
-                    vec![text_arg(title), text_arg(artist), text_arg(&year_str)],
+                    "INSERT INTO cloud_album_ratings
+                         (album_title, album_artist, year_str, rating, updated_at)
+                     VALUES (?, ?, ?, NULL, ?)
+                     ON CONFLICT(album_title, album_artist, year_str) DO UPDATE SET
+                         rating     = NULL,
+                         updated_at = MAX(cloud_album_ratings.updated_at, excluded.updated_at)",
+                    vec![
+                        text_arg(title),
+                        text_arg(artist),
+                        text_arg(&year_str),
+                        int_arg(updated_at),
+                    ],
                 )
                 .await
         }

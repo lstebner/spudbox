@@ -80,6 +80,10 @@ function createLibraryStore() {
       artists = await commands.libraryGetArtists();
       await loadAlbums();
       await loadAllAlbums();
+      // If the selected album was just removed, clear back to the grid
+      if (selectedAlbumId !== null && !allAlbums.some((a) => a.id === selectedAlbumId)) {
+        selectedAlbumId = null;
+      }
     } finally {
       loading = false;
     }

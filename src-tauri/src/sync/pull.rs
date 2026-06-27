@@ -9,7 +9,7 @@ pub struct CloudRating {
     pub title: String,
     pub artist: String,
     pub year_str: String,
-    pub rating: f64,
+    pub rating: Option<f64>, // None = tombstone (rating was deleted on another machine)
     pub updated_at: i64,
 }
 
@@ -40,7 +40,7 @@ pub async fn fetch_cloud_ratings(client: &TursoClient) -> Result<Vec<CloudRating
         let title = row_text(&row[0]).unwrap_or("").to_string();
         let artist = row_text(&row[1]).unwrap_or("").to_string();
         let year_str = row_text(&row[2]).unwrap_or("").to_string();
-        let Some(rating) = row_float(&row[3]) else { continue };
+        let rating = row_float(&row[3]); // None = tombstone
         let updated_at = row_int(&row[4]).unwrap_or(0);
         out.push(CloudRating { title, artist, year_str, rating, updated_at });
     }
@@ -127,6 +127,8 @@ pub fn apply_ratings(conn: &Connection, ratings: &[CloudRating]) -> Result<usize
             .unwrap_or(0);
 
         if cr.updated_at >= local_ts {
+            // rating is Option<f64>: Some(r) = real rating, None = tombstone.
+            // rusqlite binds None as SQL NULL, which is what we want for tombstones.
             conn.execute(
                 "INSERT INTO album_ratings (album_id, rating, updated_at) VALUES (?1, ?2, ?3)
                  ON CONFLICT(album_id) DO UPDATE SET
