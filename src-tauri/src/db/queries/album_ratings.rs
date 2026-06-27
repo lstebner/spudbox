@@ -34,6 +34,8 @@ pub fn set_rating(conn: &Connection, album_id: i64, rating: Option<f64>) -> Resu
 
 #[cfg(test)]
 mod tests {
+    use rusqlite::OptionalExtension;
+
     use super::*;
     use crate::db::queries::{albums, artists};
     use crate::db::schema::test_connection;
@@ -86,5 +88,53 @@ mod tests {
         setup_album(&conn);
         let rows = albums::list_all(&conn, None).unwrap();
         assert_eq!(rows[0].rating, None);
+    }
+
+    #[test]
+    fn set_rating_none_writes_tombstone_row_not_a_deletion() {
+        let conn = test_connection();
+        let album_id = setup_album(&conn);
+        set_rating(&conn, album_id, Some(7.0)).unwrap();
+        set_rating(&conn, album_id, None).unwrap();
+
+        // A tombstone row must exist (so cloud sync can propagate the deletion)
+        let row: Option<Option<f64>> = conn
+            .query_row(
+                "SELECT rating FROM album_ratings WHERE album_id = ?1",
+                [album_id],
+                |r| r.get::<_, Option<f64>>(0),
+            )
+            .optional()
+            .unwrap();
+        assert!(row.is_some(), "tombstone row must exist after unrating");
+        assert_eq!(row.unwrap(), None, "tombstone row must have NULL rating");
+    }
+
+    #[test]
+    fn tombstone_has_nonzero_updated_at_for_lww() {
+        let conn = test_connection();
+        let album_id = setup_album(&conn);
+        set_rating(&conn, album_id, Some(7.0)).unwrap();
+        set_rating(&conn, album_id, None).unwrap();
+
+        let ts: i64 = conn
+            .query_row(
+                "SELECT updated_at FROM album_ratings WHERE album_id = ?1",
+                [album_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(ts > 0, "tombstone must carry a real timestamp for LWW comparison");
+    }
+
+    #[test]
+    fn re_rating_after_tombstone_restores_rating() {
+        let conn = test_connection();
+        let album_id = setup_album(&conn);
+        set_rating(&conn, album_id, Some(5.0)).unwrap();
+        set_rating(&conn, album_id, None).unwrap();
+        set_rating(&conn, album_id, Some(9.0)).unwrap();
+        let rows = albums::list_all(&conn, None).unwrap();
+        assert_eq!(rows[0].rating, Some(9.0));
     }
 }

@@ -50,7 +50,45 @@ pub fn remove(conn: &Connection, path: &str) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::schema::test_connection;
+    use crate::db::{
+        queries::{albums, artists, tracks},
+        schema::test_connection,
+    };
+
+    fn insert_track(conn: &Connection, path: &str, folder: &str, album_id: i64, artist_id: i64) {
+        tracks::upsert(conn, &tracks::NewTrack {
+            path,
+            folder_path: folder,
+            title: "Test Track",
+            track_artist_id: artist_id,
+            album_id,
+            genre_id: None,
+            track_no: Some(1),
+            disc_no: Some(1),
+            duration_ms: 180_000,
+            sample_rate: Some(44100),
+            bit_depth: Some(16),
+            channels: Some(2),
+            codec: "flac",
+            bitrate_kbps: None,
+            file_size: 1_000,
+            file_mtime: 0,
+            now: 0,
+        })
+        .unwrap();
+    }
+
+    fn track_count(conn: &Connection) -> i64 {
+        conn.query_row("SELECT COUNT(*) FROM tracks", [], |r| r.get(0)).unwrap()
+    }
+
+    fn album_count(conn: &Connection) -> i64 {
+        conn.query_row("SELECT COUNT(*) FROM albums", [], |r| r.get(0)).unwrap()
+    }
+
+    fn artist_count(conn: &Connection) -> i64 {
+        conn.query_row("SELECT COUNT(*) FROM artists", [], |r| r.get(0)).unwrap()
+    }
 
     #[test]
     fn has_enabled_is_false_until_a_root_is_added() {
@@ -76,5 +114,77 @@ mod tests {
         let mut roots = list_enabled(&conn).unwrap();
         roots.sort();
         assert_eq!(roots, vec!["/home/luke/Music".to_string(), "/mnt/nas/Music".to_string()]);
+    }
+
+    #[test]
+    fn remove_deletes_tracks_and_cleans_up_album_and_artist() {
+        let conn = test_connection();
+        let artist_id = artists::upsert(&conn, "Radiohead").unwrap();
+        let album_id = albums::upsert(&conn, "OK Computer", artist_id, Some(1997)).unwrap();
+        add(&conn, "/music").unwrap();
+        insert_track(&conn, "/music/ok_computer/track1.flac", "/music/ok_computer", album_id, artist_id);
+
+        remove(&conn, "/music").unwrap();
+
+        assert_eq!(track_count(&conn), 0);
+        assert_eq!(album_count(&conn), 0);
+        assert_eq!(artist_count(&conn), 0);
+        assert!(!has_enabled(&conn).unwrap());
+    }
+
+    #[test]
+    fn remove_does_not_affect_tracks_from_other_roots() {
+        let conn = test_connection();
+        let artist_id = artists::upsert(&conn, "Artist").unwrap();
+        let album_a = albums::upsert(&conn, "Album A", artist_id, Some(2000)).unwrap();
+        let album_b = albums::upsert(&conn, "Album B", artist_id, Some(2001)).unwrap();
+        add(&conn, "/music").unwrap();
+        add(&conn, "/nas/music").unwrap();
+        insert_track(&conn, "/music/a/track.flac", "/music/a", album_a, artist_id);
+        insert_track(&conn, "/nas/music/b/track.flac", "/nas/music/b", album_b, artist_id);
+
+        remove(&conn, "/music").unwrap();
+
+        assert_eq!(track_count(&conn), 1);
+        assert_eq!(album_count(&conn), 1);
+    }
+
+    #[test]
+    fn remove_does_not_match_sibling_dirs_with_underscore_in_name() {
+        // Regression: the old LIKE '/%' pattern treated '_' as a wildcard,
+        // so removing "/music" would also delete tracks from "/music_extra".
+        let conn = test_connection();
+        let artist_id = artists::upsert(&conn, "Artist").unwrap();
+        let album_a = albums::upsert(&conn, "Album A", artist_id, Some(2000)).unwrap();
+        let album_b = albums::upsert(&conn, "Album B", artist_id, Some(2001)).unwrap();
+        add(&conn, "/music").unwrap();
+        add(&conn, "/music_extra").unwrap();
+        insert_track(&conn, "/music/track.flac", "/music", album_a, artist_id);
+        insert_track(&conn, "/music_extra/track.flac", "/music_extra", album_b, artist_id);
+
+        remove(&conn, "/music").unwrap();
+
+        assert_eq!(track_count(&conn), 1, "track in /music_extra must survive");
+        let remaining: String = conn
+            .query_row("SELECT path FROM tracks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(remaining, "/music_extra/track.flac");
+    }
+
+    #[test]
+    fn remove_preserves_albums_that_still_have_tracks_in_another_root() {
+        let conn = test_connection();
+        let artist_id = artists::upsert(&conn, "Artist").unwrap();
+        let album_id = albums::upsert(&conn, "Split Album", artist_id, Some(2000)).unwrap();
+        add(&conn, "/root_a").unwrap();
+        add(&conn, "/root_b").unwrap();
+        insert_track(&conn, "/root_a/track1.flac", "/root_a", album_id, artist_id);
+        insert_track(&conn, "/root_b/track2.flac", "/root_b", album_id, artist_id);
+
+        remove(&conn, "/root_a").unwrap();
+
+        assert_eq!(track_count(&conn), 1);
+        assert_eq!(album_count(&conn), 1, "album still has a track in /root_b");
+        assert_eq!(artist_count(&conn), 1);
     }
 }
