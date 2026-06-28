@@ -37,6 +37,21 @@ Linux build prerequisites: `libwebkit2gtk-4.1-dev`, `libasound2-dev`, `libdbus-1
 
 CI (`.github/workflows/ci.yml`) runs both test suites on `pull_request` to `main` only — it does not run on direct pushes.
 
+## Coding and workflow guidelines
+
+- **Conventional commits**: all commit messages must follow the [Conventional Commits](https://www.conventionalcommits.org/) format (`feat:`, `fix:`, `refactor:`, `chore:`, etc.).
+- **Never work on main**: always create a branch for changes; never commit directly to `main`.
+- **Spell words out**: no abbreviations or shorthand in variable names, function names, or identifiers — write `index` not `idx`, `error` not `err`, `configuration` not `cfg`, etc.
+- **Self-documenting names**: choose names that make the code's intent clear without needing a comment to explain it.
+- **Comments only when necessary**: add a comment only when the code does something non-obvious that a future reader would need help staying oriented — not to describe what the code does (the code already does that).
+- **No `.unwrap()` in non-test code**: use `?` for propagation or handle the error explicitly. A panic in the audio engine thread kills playback silently; `.expect("reason")` is acceptable only when the invariant is truly guaranteed and worth documenting.
+- **Test names describe behavior**: name tests after what they assert, not what they call — `upsert_inserts_a_new_track`, not `test_upsert`. This is already the established pattern; keep it.
+- **Always write tests**: every new feature and every bug fix should include tests — a test that reproduces the bug before the fix, then passes after.
+- **No debug logging in commits**: `println!`, `dbg!`, `console.log`, and similar should not appear in committed code.
+- **Keep PRs focused**: one concern per PR — a bug fix should not also refactor unrelated code; split them into separate PRs.
+- **No magic numbers or strings**: use named constants for anything non-obvious (timeouts, buffer sizes, thresholds, limits).
+- **Accessibility**: follow accessibility best practices throughout the UI — semantic HTML elements, ARIA attributes where needed, keyboard navigability, sufficient color contrast. The goal is for the entire app to be accessibility friendly.
+
 ## Architecture
 
 ### Process model
