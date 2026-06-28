@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ChevronDown, ChevronRight } from "@lucide/svelte";
+  import { ChevronDown, ChevronRight, X } from "@lucide/svelte";
   import { library } from "$lib/stores/library.svelte";
   import type { AlbumRow } from "$lib/types";
 
@@ -67,7 +67,14 @@
 </script>
 
 <div class="search">
-  <input type="text" placeholder="Search artists or albums…" bind:value={query} />
+  <div class="search-wrap">
+    <input type="text" placeholder="Search artists or albums…" bind:value={query} />
+    {#if query}
+      <button class="search-clear" onclick={() => (query = "")} aria-label="Clear search">
+        <X size={14} />
+      </button>
+    {/if}
+  </div>
 </div>
 
 <nav class="artist-list">
@@ -128,6 +135,10 @@
     background: var(--bg-elevated);
   }
 
+  .search-wrap {
+    position: relative;
+  }
+
   .search input {
     width: 100%;
     background: var(--bg-hover);
@@ -135,10 +146,32 @@
     border-radius: var(--radius);
     color: var(--text-primary);
     padding: 0.4em 0.6em;
+    padding-right: 1.8em;
+    box-sizing: border-box;
   }
 
   .search input::placeholder {
     color: var(--text-tertiary);
+  }
+
+  .search-clear {
+    position: absolute;
+    right: 0.3em;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.15em;
+    border-radius: var(--radius-sm);
+  }
+
+  .search-clear:hover {
+    color: var(--text-primary);
   }
 
   .artist-list {
@@ -176,6 +209,7 @@
     align-items: center;
     gap: 0.5em;
     width: 100%;
+    min-width: 0;
     text-align: left;
     background: none;
     border: none;

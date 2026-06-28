@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createVirtualizer } from "@tanstack/svelte-virtual";
   import { convertFileSrc } from "@tauri-apps/api/core";
-  import { ArrowLeft } from "@lucide/svelte";
+  import { ArrowLeft, Play, X } from "@lucide/svelte";
   import { get } from "svelte/store";
   import { library } from "$lib/stores/library.svelte";
   import { player } from "$lib/stores/player.svelte";
@@ -30,10 +30,42 @@
     });
   });
 
+  let artModalOpen = $state(false);
+
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape") artModalOpen = false;
+  }
+
   function playFrom(index: number) {
     player.playQueue(library.tracks.map((t) => t.id), index);
   }
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
+
+{#if artModalOpen && album?.art_path}
+  <div
+    class="art-modal"
+    role="dialog"
+    aria-modal="true"
+    tabindex="-1"
+    onclick={() => (artModalOpen = false)}
+    onkeydown={handleKeydown}
+  >
+    <button
+      class="art-modal-close"
+      onclick={(e) => { e.stopPropagation(); artModalOpen = false; }}
+      aria-label="Close"
+    >
+      <X size={20} />
+    </button>
+    <img
+      src={convertFileSrc(album.art_path)}
+      alt={album.title}
+      class="art-modal-img"
+    />
+  </div>
+{/if}
 
 <div class="track-view">
   <div class="header">
@@ -44,7 +76,9 @@
     {#if album}
       <div class="art">
         {#if album.art_path}
-          <img src={convertFileSrc(album.art_path)} alt={album.title} />
+          <button class="art-btn" onclick={() => (artModalOpen = true)} aria-label="View full artwork">
+            <img src={convertFileSrc(album.art_path)} alt={album.title} />
+          </button>
         {:else}
           <div class="art-placeholder"></div>
         {/if}
@@ -69,7 +103,13 @@
           style="transform: translateY({row.start}px); height: {ROW_HEIGHT}px;"
           onclick={() => playFrom(row.index)}
         >
-          <span class="col-no">{t.track_no ?? ""}</span>
+          <span class="col-no">
+            {#if t.id === player.snapshot.track_id}
+              <Play size={12} fill="currentColor" />
+            {:else}
+              {t.track_no ?? ""}
+            {/if}
+          </span>
           <span class="col-title">{t.title}</span>
           <span class="col-duration">{formatDuration(t.duration_ms)}</span>
         </button>
@@ -124,6 +164,54 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+  }
+
+  .art-btn {
+    display: block;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: zoom-in;
+  }
+
+  .art-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: zoom-out;
+  }
+
+  .art-modal-close {
+    position: absolute;
+    top: 1em;
+    right: 1em;
+    background: rgba(0, 0, 0, 0.5);
+    border: none;
+    border-radius: 50%;
+    width: 36px;
+    height: 36px;
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .art-modal-close:hover {
+    background: rgba(0, 0, 0, 0.8);
+  }
+
+  .art-modal-img {
+    max-width: 90vw;
+    max-height: 90vh;
+    object-fit: contain;
+    border-radius: var(--radius);
   }
 
   .art-placeholder {
@@ -187,6 +275,9 @@
     color: var(--text-tertiary);
     text-align: right;
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
   }
 
   .col-title {
