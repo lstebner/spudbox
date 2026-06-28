@@ -58,6 +58,7 @@
     width: var(--sidebar-width);
     display: flex;
     flex-direction: column;
+    overflow-x: hidden;
     overflow-y: auto;
     border-right: 1px solid var(--border);
     background: var(--bg-elevated);

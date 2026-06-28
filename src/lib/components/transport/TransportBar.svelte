@@ -1,6 +1,6 @@
 <script lang="ts">
   import { convertFileSrc } from "@tauri-apps/api/core";
-  import { Pause, Play, SkipBack, SkipForward } from "@lucide/svelte";
+  import { Pause, Play, SkipBack, SkipForward, Volume2 } from "@lucide/svelte";
   import { library } from "$lib/stores/library.svelte";
   import { player } from "$lib/stores/player.svelte";
   import { formatDuration } from "$lib/format";
@@ -106,6 +106,7 @@
   </div>
 
   <div class="volume">
+    <Volume2 size={16} />
     <input
       type="range"
       min="0"
@@ -267,7 +268,10 @@
 
   .volume {
     display: flex;
+    align-items: center;
     justify-content: flex-end;
+    gap: 0.5em;
+    color: var(--text-secondary);
   }
 
   .volume input[type="range"] {
