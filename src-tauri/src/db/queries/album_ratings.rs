@@ -37,12 +37,33 @@ mod tests {
     use rusqlite::OptionalExtension;
 
     use super::*;
-    use crate::db::queries::{albums, artists};
+    use crate::db::queries::{albums, artists, tracks};
     use crate::db::schema::test_connection;
 
     fn setup_album(conn: &Connection) -> i64 {
         let artist_id = artists::upsert(conn, "Thrice").unwrap();
-        albums::upsert(conn, "Vheissu", artist_id, Some(2005)).unwrap()
+        let album_id = albums::upsert(conn, "Vheissu", artist_id, Some(2005)).unwrap();
+        // list_all filters to albums with at least one non-archived track.
+        tracks::upsert(conn, &tracks::NewTrack {
+            path: "/music/vheissu/01.flac",
+            folder_path: "/music/vheissu",
+            title: "Image of the Invisible",
+            track_artist_id: artist_id,
+            album_id,
+            genre_id: None,
+            track_no: Some(1),
+            disc_no: Some(1),
+            duration_ms: 200_000,
+            sample_rate: Some(44100),
+            bit_depth: Some(16),
+            channels: Some(2),
+            codec: "flac",
+            bitrate_kbps: None,
+            file_size: 1_000_000,
+            file_mtime: 0,
+            now: 0,
+        }).unwrap();
+        album_id
     }
 
     #[test]

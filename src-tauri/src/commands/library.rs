@@ -44,9 +44,9 @@ pub fn library_list_roots(state: State<AppState>) -> Result<Vec<String>, AppErro
 }
 
 #[tauri::command]
-pub fn library_remove_root(state: State<AppState>, path: String) -> Result<(), AppError> {
+pub fn library_remove_root(state: State<AppState>, path: String, keep_stats: bool) -> Result<(), AppError> {
     let conn = state.db.get()?;
-    scan_roots::remove(&conn, &path)
+    scan_roots::remove(&conn, &path, keep_stats)
 }
 
 /// Async so the genuinely slow work (a fresh scan of thousands of files, or

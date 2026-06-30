@@ -22,26 +22,35 @@ pub fn has_enabled(conn: &Connection) -> Result<bool, AppError> {
     Ok(count > 0)
 }
 
-pub fn remove(conn: &Connection, path: &str) -> Result<(), AppError> {
+pub fn remove(conn: &Connection, path: &str, keep_stats: bool) -> Result<(), AppError> {
     let tx = conn.unchecked_transaction()?;
     // substr comparison avoids LIKE's _ and % wildcard interpretation, which
     // would silently match unintended paths if the folder name contained those chars.
-    tx.execute(
-        "DELETE FROM tracks WHERE substr(path, 1, length(?1) + 1) = ?1 || '/'",
-        [path],
-    )?;
-    tx.execute(
-        "DELETE FROM albums WHERE id NOT IN (SELECT DISTINCT album_id FROM tracks WHERE album_id IS NOT NULL)",
-        [],
-    )?;
-    tx.execute(
-        "DELETE FROM artists WHERE id NOT IN (
-            SELECT DISTINCT album_artist_id FROM albums WHERE album_artist_id IS NOT NULL
-            UNION
-            SELECT DISTINCT track_artist_id FROM tracks WHERE track_artist_id IS NOT NULL
-        )",
-        [],
-    )?;
+    if keep_stats {
+        tx.execute(
+            "UPDATE tracks SET is_archived = 1 WHERE substr(path, 1, length(?1) + 1) = ?1 || '/'",
+            [path],
+        )?;
+        // Albums and artists are left in place; the library queries filter them
+        // out by checking for at least one non-archived track.
+    } else {
+        tx.execute(
+            "DELETE FROM tracks WHERE substr(path, 1, length(?1) + 1) = ?1 || '/'",
+            [path],
+        )?;
+        tx.execute(
+            "DELETE FROM albums WHERE id NOT IN (SELECT DISTINCT album_id FROM tracks WHERE album_id IS NOT NULL)",
+            [],
+        )?;
+        tx.execute(
+            "DELETE FROM artists WHERE id NOT IN (
+                SELECT DISTINCT album_artist_id FROM albums WHERE album_artist_id IS NOT NULL
+                UNION
+                SELECT DISTINCT track_artist_id FROM tracks WHERE track_artist_id IS NOT NULL
+            )",
+            [],
+        )?;
+    }
     tx.execute("DELETE FROM scan_roots WHERE path = ?1", [path])?;
     tx.commit()?;
     Ok(())
@@ -124,7 +133,7 @@ mod tests {
         add(&conn, "/music").unwrap();
         insert_track(&conn, "/music/ok_computer/track1.flac", "/music/ok_computer", album_id, artist_id);
 
-        remove(&conn, "/music").unwrap();
+        remove(&conn, "/music", false).unwrap();
 
         assert_eq!(track_count(&conn), 0);
         assert_eq!(album_count(&conn), 0);
@@ -143,7 +152,7 @@ mod tests {
         insert_track(&conn, "/music/a/track.flac", "/music/a", album_a, artist_id);
         insert_track(&conn, "/nas/music/b/track.flac", "/nas/music/b", album_b, artist_id);
 
-        remove(&conn, "/music").unwrap();
+        remove(&conn, "/music", false).unwrap();
 
         assert_eq!(track_count(&conn), 1);
         assert_eq!(album_count(&conn), 1);
@@ -162,13 +171,57 @@ mod tests {
         insert_track(&conn, "/music/track.flac", "/music", album_a, artist_id);
         insert_track(&conn, "/music_extra/track.flac", "/music_extra", album_b, artist_id);
 
-        remove(&conn, "/music").unwrap();
+        remove(&conn, "/music", false).unwrap();
 
         assert_eq!(track_count(&conn), 1, "track in /music_extra must survive");
         let remaining: String = conn
             .query_row("SELECT path FROM tracks", [], |r| r.get(0))
             .unwrap();
         assert_eq!(remaining, "/music_extra/track.flac");
+    }
+
+    #[test]
+    fn remove_with_keep_stats_archives_tracks_instead_of_deleting() {
+        let conn = test_connection();
+        let artist_id = artists::upsert(&conn, "Radiohead").unwrap();
+        let album_id = albums::upsert(&conn, "OK Computer", artist_id, Some(1997)).unwrap();
+        add(&conn, "/music").unwrap();
+        insert_track(&conn, "/music/ok_computer/track1.flac", "/music/ok_computer", album_id, artist_id);
+
+        remove(&conn, "/music", true).unwrap();
+
+        assert_eq!(track_count(&conn), 1, "track must remain in DB");
+        let archived: i64 = conn
+            .query_row("SELECT is_archived FROM tracks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(archived, 1, "track must be marked archived");
+        // Album and artist survive because their tracks are still referenced
+        assert_eq!(album_count(&conn), 1);
+        assert_eq!(artist_count(&conn), 1);
+        assert!(!has_enabled(&conn).unwrap());
+    }
+
+    #[test]
+    fn remove_with_keep_stats_only_archives_tracks_from_the_given_root() {
+        let conn = test_connection();
+        let artist_id = artists::upsert(&conn, "Artist").unwrap();
+        let album_a = albums::upsert(&conn, "Album A", artist_id, Some(2000)).unwrap();
+        let album_b = albums::upsert(&conn, "Album B", artist_id, Some(2001)).unwrap();
+        add(&conn, "/music").unwrap();
+        add(&conn, "/nas/music").unwrap();
+        insert_track(&conn, "/music/a/track.flac", "/music/a", album_a, artist_id);
+        insert_track(&conn, "/nas/music/b/track.flac", "/nas/music/b", album_b, artist_id);
+
+        remove(&conn, "/music", true).unwrap();
+
+        let archived: i64 = conn
+            .query_row("SELECT is_archived FROM tracks WHERE path = '/music/a/track.flac'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(archived, 1);
+        let active: i64 = conn
+            .query_row("SELECT is_archived FROM tracks WHERE path = '/nas/music/b/track.flac'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(active, 0, "track from other root must remain active");
     }
 
     #[test]
@@ -181,7 +234,7 @@ mod tests {
         insert_track(&conn, "/root_a/track1.flac", "/root_a", album_id, artist_id);
         insert_track(&conn, "/root_b/track2.flac", "/root_b", album_id, artist_id);
 
-        remove(&conn, "/root_a").unwrap();
+        remove(&conn, "/root_a", false).unwrap();
 
         assert_eq!(track_count(&conn), 1);
         assert_eq!(album_count(&conn), 1, "album still has a track in /root_b");

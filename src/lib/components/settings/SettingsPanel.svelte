@@ -31,12 +31,19 @@
   }
 
   async function removeFolder(path: string) {
-    const ok = await confirm(
-      `Remove "${path}" from your library?\n\nAll tracks, play counts, and ratings for this folder will be deleted. This cannot be undone (unless cloud sync is configured).`,
-      { title: "Remove music folder", kind: "warning" }
+    const confirmed = await confirm(
+      `Remove "${path}" from your library?\n\nYour files won't be affected.`,
+      { kind: "warning", okLabel: "Remove", cancelLabel: "Cancel" }
     );
-    if (!ok) return;
-    await commands.libraryRemoveRoot(path);
+    if (!confirmed) return;
+
+    const deleteStats = await confirm(
+      `Delete play counts and ratings for tracks in "${path}"?\n\nChoose Keep to preserve your listening history — useful if you plan to move or re-add this folder.`,
+      { kind: "warning", okLabel: "Delete", cancelLabel: "Keep" }
+    );
+    const keepStats = !deleteStats;
+
+    await commands.libraryRemoveRoot(path, keepStats);
     roots = await commands.libraryListRoots();
     await library.refresh();
   }

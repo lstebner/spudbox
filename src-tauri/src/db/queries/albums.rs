@@ -25,7 +25,8 @@ pub fn list_all(
          JOIN hidden_albums ha ON ha.album_id = al.id
          LEFT JOIN artists ar ON ar.id = al.album_artist_id
          LEFT JOIN album_ratings art ON art.album_id = al.id
-         WHERE ?1 IS NULL OR al.album_artist_id = ?1
+         WHERE (?1 IS NULL OR al.album_artist_id = ?1)
+           AND EXISTS (SELECT 1 FROM tracks WHERE album_id = al.id AND is_archived = 0)
          ORDER BY ar.sort_name, ar.name, al.year, al.title"
     } else {
         "SELECT al.id, al.title, ar.name, al.album_artist_id, al.year, al.art_path, art.rating
@@ -35,6 +36,7 @@ pub fn list_all(
          LEFT JOIN hidden_albums ha ON ha.album_id = al.id
          WHERE ha.album_id IS NULL
            AND (?1 IS NULL OR al.album_artist_id = ?1)
+           AND EXISTS (SELECT 1 FROM tracks WHERE album_id = al.id AND is_archived = 0)
          ORDER BY ar.sort_name, ar.name, al.year, al.title"
     };
     let mut stmt = conn.prepare(sql)?;
@@ -112,8 +114,30 @@ pub fn set_art(conn: &Connection, album_id: i64, art_path: Option<&str>, art_sou
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::queries::artists;
+    use crate::db::queries::{artists, tracks};
     use crate::db::schema::test_connection;
+
+    fn insert_active_track(conn: &Connection, path: &str, artist_id: i64, album_id: i64) {
+        tracks::upsert(conn, &tracks::NewTrack {
+            path,
+            folder_path: "/music",
+            title: "Test",
+            track_artist_id: artist_id,
+            album_id,
+            genre_id: None,
+            track_no: Some(1),
+            disc_no: Some(1),
+            duration_ms: 180_000,
+            sample_rate: Some(44100),
+            bit_depth: Some(16),
+            channels: Some(2),
+            codec: "flac",
+            bitrate_kbps: None,
+            file_size: 1_000,
+            file_mtime: 0,
+            now: 0,
+        }).unwrap();
+    }
 
     #[test]
     fn upsert_is_idempotent_for_the_same_title_artist_year() {
@@ -153,8 +177,10 @@ mod tests {
         let conn = test_connection();
         let a = artists::upsert(&conn, "Thrice").unwrap();
         let b = artists::upsert(&conn, "Norma Jean").unwrap();
-        upsert(&conn, "Vheissu", a, Some(2005)).unwrap();
-        upsert(&conn, "Redeemer", b, Some(2002)).unwrap();
+        let album_a = upsert(&conn, "Vheissu", a, Some(2005)).unwrap();
+        let album_b = upsert(&conn, "Redeemer", b, Some(2002)).unwrap();
+        insert_active_track(&conn, "/music/a.flac", a, album_a);
+        insert_active_track(&conn, "/music/b.flac", b, album_b);
 
         let all = list_all(&conn, None, false).unwrap();
         assert_eq!(all.len(), 2);
@@ -170,6 +196,8 @@ mod tests {
         let artist_id = artists::upsert(&conn, "Thrice").unwrap();
         let visible = upsert(&conn, "Vheissu", artist_id, Some(2005)).unwrap();
         let hidden = upsert(&conn, "The Artist in the Ambulance", artist_id, Some(2003)).unwrap();
+        insert_active_track(&conn, "/music/vheissu.flac", artist_id, visible);
+        insert_active_track(&conn, "/music/taia.flac", artist_id, hidden);
         super::super::hidden_albums::hide(&conn, hidden).unwrap();
 
         let rows = list_all(&conn, None, false).unwrap();
@@ -181,8 +209,10 @@ mod tests {
     fn list_all_returns_only_hidden_albums_when_hidden_only_is_true() {
         let conn = test_connection();
         let artist_id = artists::upsert(&conn, "Thrice").unwrap();
-        upsert(&conn, "Vheissu", artist_id, Some(2005)).unwrap();
+        let visible = upsert(&conn, "Vheissu", artist_id, Some(2005)).unwrap();
         let hidden = upsert(&conn, "The Artist in the Ambulance", artist_id, Some(2003)).unwrap();
+        insert_active_track(&conn, "/music/vheissu.flac", artist_id, visible);
+        insert_active_track(&conn, "/music/taia.flac", artist_id, hidden);
         super::super::hidden_albums::hide(&conn, hidden).unwrap();
 
         let rows = list_all(&conn, None, true).unwrap();
@@ -191,10 +221,43 @@ mod tests {
     }
 
     #[test]
+    fn list_all_hidden_only_excludes_albums_with_only_archived_tracks() {
+        let conn = test_connection();
+        let artist_id = artists::upsert(&conn, "Artist").unwrap();
+        let hidden_active = upsert(&conn, "Hidden Active", artist_id, Some(2020)).unwrap();
+        let hidden_archived = upsert(&conn, "Hidden Archived", artist_id, Some(2019)).unwrap();
+        insert_active_track(&conn, "/music/active.flac", artist_id, hidden_active);
+        insert_active_track(&conn, "/music/archived.flac", artist_id, hidden_archived);
+        conn.execute("UPDATE tracks SET is_archived = 1 WHERE path = '/music/archived.flac'", []).unwrap();
+        super::super::hidden_albums::hide(&conn, hidden_active).unwrap();
+        super::super::hidden_albums::hide(&conn, hidden_archived).unwrap();
+
+        let rows = list_all(&conn, None, true).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, hidden_active);
+    }
+
+    #[test]
+    fn list_all_excludes_albums_with_only_archived_tracks() {
+        let conn = test_connection();
+        let artist_id = artists::upsert(&conn, "Artist").unwrap();
+        let active_album = upsert(&conn, "Active Album", artist_id, Some(2020)).unwrap();
+        let archived_album = upsert(&conn, "Archived Album", artist_id, Some(2019)).unwrap();
+        insert_active_track(&conn, "/music/active.flac", artist_id, active_album);
+        insert_active_track(&conn, "/music/archived.flac", artist_id, archived_album);
+        conn.execute("UPDATE tracks SET is_archived = 1 WHERE path = '/music/archived.flac'", []).unwrap();
+
+        let rows = list_all(&conn, None, false).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].title, "Active Album");
+    }
+
+    #[test]
     fn missing_art_then_set_art_round_trips() {
         let conn = test_connection();
         let artist_id = artists::upsert(&conn, "Thrice").unwrap();
         let album_id = upsert(&conn, "Vheissu", artist_id, Some(2005)).unwrap();
+        insert_active_track(&conn, "/music/vheissu.flac", artist_id, album_id);
 
         assert_eq!(list_missing_art(&conn).unwrap(), vec![album_id]);
 

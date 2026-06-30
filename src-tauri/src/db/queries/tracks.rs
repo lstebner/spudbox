@@ -48,7 +48,8 @@ pub fn upsert(conn: &Connection, t: &NewTrack) -> Result<i64, AppError> {
             bitrate_kbps = excluded.bitrate_kbps,
             file_size = excluded.file_size,
             file_mtime = excluded.file_mtime,
-            date_modified_db = excluded.date_modified_db
+            date_modified_db = excluded.date_modified_db,
+            is_archived = 0
         RETURNING id",
         params![
             t.path,
@@ -75,10 +76,12 @@ pub fn upsert(conn: &Connection, t: &NewTrack) -> Result<i64, AppError> {
     Ok(id)
 }
 
-/// Loads `path -> (file_mtime, file_size)` for every known track, used to skip
-/// re-parsing tags for files that haven't changed since the last scan.
+/// Loads `path -> (file_mtime, file_size)` for every active (non-archived) track,
+/// used by the scanner to skip re-parsing unchanged files and to detect deleted
+/// files. Archived tracks are excluded so the scanner does not treat them as
+/// "missing from disk" and delete them.
 pub fn fingerprints(conn: &Connection) -> Result<HashMap<String, (i64, i64)>, AppError> {
-    let mut stmt = conn.prepare("SELECT path, file_mtime, file_size FROM tracks")?;
+    let mut stmt = conn.prepare("SELECT path, file_mtime, file_size FROM tracks WHERE is_archived = 0")?;
     let rows = stmt.query_map([], |row| {
         Ok((
             row.get::<_, String>(0)?,
@@ -213,6 +216,7 @@ pub fn list_all(conn: &Connection) -> Result<Vec<TrackRow>, AppError> {
          FROM tracks t
          LEFT JOIN artists ar ON ar.id = t.track_artist_id
          LEFT JOIN albums al ON al.id = t.album_id
+         WHERE t.is_archived = 0
          ORDER BY ar.sort_name, ar.name, al.title, t.disc_no, t.track_no"
     );
     let mut stmt = conn.prepare(&sql)?;
@@ -226,7 +230,7 @@ pub fn list_by_album(conn: &Connection, album_id: i64) -> Result<Vec<TrackRow>, 
          FROM tracks t
          LEFT JOIN artists ar ON ar.id = t.track_artist_id
          LEFT JOIN albums al ON al.id = t.album_id
-         WHERE t.album_id = ?1
+         WHERE t.album_id = ?1 AND t.is_archived = 0
          ORDER BY t.disc_no, t.track_no"
     );
     let mut stmt = conn.prepare(&sql)?;
@@ -362,6 +366,48 @@ mod tests {
         let deleted = delete_by_paths(&conn, &["/music/a.flac".to_string()]).unwrap();
         assert_eq!(deleted, 1);
         assert_eq!(track_count(&conn), 1);
+    }
+
+    #[test]
+    fn fingerprints_excludes_archived_tracks() {
+        let conn = test_connection();
+        let (artist_id, album_id) = setup_artist_and_album(&conn);
+        upsert(&conn, &sample_track("/music/a.flac", "Track A", artist_id, album_id, 1)).unwrap();
+        upsert(&conn, &sample_track("/music/b.flac", "Track B", artist_id, album_id, 2)).unwrap();
+        conn.execute("UPDATE tracks SET is_archived = 1 WHERE path = '/music/b.flac'", []).unwrap();
+
+        let fps = fingerprints(&conn).unwrap();
+        assert!(fps.contains_key("/music/a.flac"));
+        assert!(!fps.contains_key("/music/b.flac"), "archived track must not appear in fingerprints");
+    }
+
+    #[test]
+    fn upsert_restores_archived_track() {
+        let conn = test_connection();
+        let (artist_id, album_id) = setup_artist_and_album(&conn);
+        let id = upsert(&conn, &sample_track("/music/a.flac", "Track A", artist_id, album_id, 1)).unwrap();
+        conn.execute("UPDATE tracks SET is_archived = 1 WHERE id = ?1", [id]).unwrap();
+
+        // Upserting the same path should restore is_archived = 0
+        let id2 = upsert(&conn, &sample_track("/music/a.flac", "Track A", artist_id, album_id, 1)).unwrap();
+        assert_eq!(id, id2);
+        let archived: i64 = conn
+            .query_row("SELECT is_archived FROM tracks WHERE id = ?1", [id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(archived, 0, "upsert must clear is_archived");
+    }
+
+    #[test]
+    fn list_by_album_excludes_archived_tracks() {
+        let conn = test_connection();
+        let (artist_id, album_id) = setup_artist_and_album(&conn);
+        upsert(&conn, &sample_track("/music/a.flac", "Track A", artist_id, album_id, 1)).unwrap();
+        let id_b = upsert(&conn, &sample_track("/music/b.flac", "Track B", artist_id, album_id, 2)).unwrap();
+        conn.execute("UPDATE tracks SET is_archived = 1 WHERE id = ?1", [id_b]).unwrap();
+
+        let rows = list_by_album(&conn, album_id).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].title, "Track A");
     }
 
     #[test]
