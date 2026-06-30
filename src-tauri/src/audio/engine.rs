@@ -153,6 +153,13 @@ fn handle_command(state: &mut EngineState, cmd: PlayerCommand, mpris: &Mpris) {
             }
             persist_session(state);
         }
+        PlayerCommand::Stop => {
+            state.sink = None;
+            state.queue = None;
+            state.last_sink_len = 0;
+            mpris.set_playback(MediaPlayback::Stopped);
+            clear_session(state);
+        }
         PlayerCommand::Next => {
             if let Some(sink) = &state.sink {
                 sink.skip_one();
@@ -280,6 +287,13 @@ fn persist_session(state: &EngineState) {
     let _ = settings::set(&conn, SETTING_LAST_QUEUE, &ids_json);
     let _ = settings::set(&conn, SETTING_LAST_QUEUE_INDEX, &queue.index().to_string());
     let _ = settings::set(&conn, SETTING_LAST_POSITION_MS, &position_ms.to_string());
+}
+
+fn clear_session(state: &EngineState) {
+    let Ok(conn) = state.db.get() else { return };
+    let _ = settings::set(&conn, SETTING_LAST_QUEUE, "");
+    let _ = settings::set(&conn, SETTING_LAST_QUEUE_INDEX, "0");
+    let _ = settings::set(&conn, SETTING_LAST_POSITION_MS, "0");
 }
 
 /// Restores volume and, if a previous queue was saved, reconstructs it and

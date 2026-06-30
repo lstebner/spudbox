@@ -78,6 +78,7 @@ pub fn run() {
             commands::playback::playback_play_queue,
             commands::playback::playback_play,
             commands::playback::playback_pause,
+            commands::playback::playback_stop,
             commands::playback::playback_next,
             commands::playback::playback_previous,
             commands::playback::playback_seek,

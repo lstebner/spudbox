@@ -71,6 +71,7 @@ pub enum PlayerCommand {
     SetQueue(Vec<TrackInfo>, usize),
     Play,
     Pause,
+    Stop,
     Next,
     Previous,
     Seek(Duration),

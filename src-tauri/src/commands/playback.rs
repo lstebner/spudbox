@@ -54,6 +54,12 @@ pub fn playback_play(state: State<AppState>) -> Result<(), AppError> {
 }
 
 #[tauri::command]
+pub fn playback_stop(state: State<AppState>) -> Result<(), AppError> {
+    state.player.send(PlayerCommand::Stop);
+    Ok(())
+}
+
+#[tauri::command]
 pub fn playback_pause(state: State<AppState>) -> Result<(), AppError> {
     state.player.send(PlayerCommand::Pause);
     Ok(())

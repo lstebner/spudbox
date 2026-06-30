@@ -22,6 +22,7 @@ export const commands = {
 
   playbackPlayQueue: (trackIds: number[], startIndex: number) =>
     invoke<void>("playback_play_queue", { trackIds, startIndex }),
+  playbackStop: () => invoke<void>("playback_stop"),
   playbackPlay: () => invoke<void>("playback_play"),
   playbackPause: () => invoke<void>("playback_pause"),
   playbackNext: () => invoke<void>("playback_next"),

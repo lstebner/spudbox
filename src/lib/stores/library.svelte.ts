@@ -104,6 +104,9 @@ function createLibraryStore() {
     loading = true;
     try {
       hasRoots = await commands.libraryHasRoots();
+      if (!hasRoots) {
+        await commands.playbackStop();
+      }
       artists = await commands.libraryGetArtists();
       await loadAlbums();
       await loadAllAlbums();
