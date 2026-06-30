@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::db::queries::{album_ratings, albums, artists, scan_roots, tracks};
+use crate::db::queries::{album_ratings, albums, artists, hidden_albums, scan_roots, tracks};
 use crate::sync::{SyncConfig, SyncManager};
 use crate::error::AppError;
 use crate::events::{ScanProgress, SCAN_PROGRESS};
@@ -111,9 +111,24 @@ pub fn library_get_artists(state: State<AppState>) -> Result<Vec<artists::Artist
 pub fn library_get_albums(
     state: State<AppState>,
     artist_id: Option<i64>,
+    hidden_only: Option<bool>,
 ) -> Result<Vec<albums::AlbumRow>, AppError> {
     let conn = state.db.get()?;
-    albums::list_all(&conn, artist_id)
+    albums::list_all(&conn, artist_id, hidden_only.unwrap_or(false))
+}
+
+#[tauri::command]
+pub fn library_set_album_hidden(
+    state: State<AppState>,
+    album_id: i64,
+    hidden: bool,
+) -> Result<(), AppError> {
+    let conn = state.db.get()?;
+    if hidden {
+        hidden_albums::hide(&conn, album_id)
+    } else {
+        hidden_albums::unhide(&conn, album_id)
+    }
 }
 
 #[tauri::command]

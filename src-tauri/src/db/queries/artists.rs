@@ -18,7 +18,10 @@ pub fn list_album_artists(conn: &Connection) -> Result<Vec<ArtistRow>, AppError>
         "SELECT ar.id, ar.name, COUNT(al.id) as album_count
          FROM artists ar
          JOIN albums al ON al.album_artist_id = ar.id
+         LEFT JOIN hidden_albums ha ON ha.album_id = al.id
+         WHERE ha.album_id IS NULL
          GROUP BY ar.id
+         HAVING COUNT(al.id) > 0
          ORDER BY ar.sort_name, ar.name",
     )?;
     let rows = stmt.query_map([], |row| {
@@ -62,6 +65,20 @@ mod tests {
         let a = upsert(&conn, "Thrice").unwrap();
         let b = upsert(&conn, "Norma Jean").unwrap();
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn list_album_artists_excludes_artists_with_all_albums_hidden() {
+        let conn = test_connection();
+        let visible_artist = upsert(&conn, "Visible Artist").unwrap();
+        let hidden_artist = upsert(&conn, "Hidden Artist").unwrap();
+        albums::upsert(&conn, "Visible Album", visible_artist, Some(2001)).unwrap();
+        let hidden_album = albums::upsert(&conn, "Hidden Album", hidden_artist, Some(2002)).unwrap();
+        super::super::hidden_albums::hide(&conn, hidden_album).unwrap();
+
+        let rows = list_album_artists(&conn).unwrap();
+        let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, vec!["Visible Artist"]);
     }
 
     #[test]

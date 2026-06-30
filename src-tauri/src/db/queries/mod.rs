@@ -2,6 +2,7 @@ pub mod album_ratings;
 pub mod albums;
 pub mod artists;
 pub mod genres;
+pub mod hidden_albums;
 pub mod scan_roots;
 pub mod settings;
 pub mod stats;

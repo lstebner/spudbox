@@ -10,8 +10,10 @@ export const commands = {
   libraryRemoveRoot: (path: string) => invoke<void>("library_remove_root", { path }),
   libraryScan: () => invoke<ScanResult>("library_scan"),
   libraryGetArtists: () => invoke<ArtistRow[]>("library_get_artists"),
-  libraryGetAlbums: (artistId: number | null) =>
-    invoke<AlbumRow[]>("library_get_albums", { artistId }),
+  libraryGetAlbums: (artistId: number | null, hiddenOnly?: boolean) =>
+    invoke<AlbumRow[]>("library_get_albums", { artistId, hiddenOnly }),
+  librarySetAlbumHidden: (albumId: number, hidden: boolean) =>
+    invoke<void>("library_set_album_hidden", { albumId, hidden }),
   libraryGetTracks: () => invoke<TrackRow[]>("library_get_tracks"),
   libraryGetTracksByAlbum: (albumId: number) =>
     invoke<TrackRow[]>("library_get_tracks_by_album", { albumId }),

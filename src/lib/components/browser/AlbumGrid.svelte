@@ -2,6 +2,7 @@
   import { createVirtualizer } from "@tanstack/svelte-virtual";
   import { convertFileSrc } from "@tauri-apps/api/core";
   import { get } from "svelte/store";
+  import { Eye, EyeOff } from "@lucide/svelte";
   import { library } from "$lib/stores/library.svelte";
   import StarRating from "$lib/components/rating/StarRating.svelte";
 
@@ -72,24 +73,36 @@
     {#each $virtualizer.getVirtualItems() as row (row.key)}
       <div class="grid-row" style="transform: translateY({row.start}px);">
         {#each albumsForRow(row.index) as album (album.id)}
-          <button
-            class="album-card"
-            style="width: {cardWidth}px;"
-            onclick={() => library.selectAlbum(album.id)}
-          >
-            <div class="art" style="width: {cardWidth}px; height: {cardWidth}px;">
-              {#if album.art_path}
-                <img src={convertFileSrc(album.art_path)} alt={album.title} loading="lazy" />
+          <div class="album-wrap" style="width: {cardWidth}px;">
+            <button
+              class="album-card"
+              onclick={() => library.selectAlbum(album.id)}
+            >
+              <div class="art" style="width: {cardWidth}px; height: {cardWidth}px;">
+                {#if album.art_path}
+                  <img src={convertFileSrc(album.art_path)} alt={album.title} loading="lazy" />
+                {:else}
+                  <div class="art-placeholder"></div>
+                {/if}
+              </div>
+              <div class="title">{album.title}</div>
+              <div class="subtitle">{album.album_artist}{album.year ? ` · ${album.year}` : ""}</div>
+              <div class="rating-row">
+                <StarRating rating={album.rating} readonly size={12} />
+              </div>
+            </button>
+            <button
+              class="hide-toggle"
+              aria-label={library.isViewingHidden ? "Show album" : "Hide album"}
+              onclick={() => library.setAlbumHidden(album.id, !library.isViewingHidden)}
+            >
+              {#if library.isViewingHidden}
+                <EyeOff size={15} />
               {:else}
-                <div class="art-placeholder"></div>
+                <Eye size={15} />
               {/if}
-            </div>
-            <div class="title">{album.title}</div>
-            <div class="subtitle">{album.album_artist}{album.year ? ` · ${album.year}` : ""}</div>
-            <div class="rating-row">
-              <StarRating rating={album.rating} readonly size={12} />
-            </div>
-          </button>
+            </button>
+          </div>
         {/each}
       </div>
     {/each}
@@ -131,7 +144,12 @@
     width: 100%;
   }
 
+  .album-wrap {
+    position: relative;
+  }
+
   .album-card {
+    width: 100%;
     background: none;
     border: none;
     color: inherit;
@@ -147,6 +165,32 @@
     background: var(--bg-hover);
     margin-bottom: 0.5em;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  }
+
+  .hide-toggle {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.55);
+    border: none;
+    border-radius: var(--radius-sm);
+    color: rgba(255, 255, 255, 0.9);
+    cursor: pointer;
+    padding: 4px;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .hide-toggle:hover {
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+  }
+
+  .album-wrap:hover .hide-toggle {
+    opacity: 1;
   }
 
   .art img {
@@ -183,7 +227,7 @@
     margin-top: 0.35em;
   }
 
-  .album-card:hover .title {
+  .album-wrap:hover .title {
     color: var(--accent-hover);
   }
 </style>

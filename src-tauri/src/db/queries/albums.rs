@@ -14,13 +14,29 @@ pub struct AlbumRow {
     pub rating: Option<f64>,
 }
 
-pub fn list_all(conn: &Connection, artist_id: Option<i64>) -> Result<Vec<AlbumRow>, AppError> {
-    let sql = "SELECT al.id, al.title, ar.name, al.album_artist_id, al.year, al.art_path, art.rating
+pub fn list_all(
+    conn: &Connection,
+    artist_id: Option<i64>,
+    hidden_only: bool,
+) -> Result<Vec<AlbumRow>, AppError> {
+    let sql = if hidden_only {
+        "SELECT al.id, al.title, ar.name, al.album_artist_id, al.year, al.art_path, art.rating
          FROM albums al
+         JOIN hidden_albums ha ON ha.album_id = al.id
          LEFT JOIN artists ar ON ar.id = al.album_artist_id
          LEFT JOIN album_ratings art ON art.album_id = al.id
          WHERE ?1 IS NULL OR al.album_artist_id = ?1
-         ORDER BY ar.sort_name, ar.name, al.year, al.title";
+         ORDER BY ar.sort_name, ar.name, al.year, al.title"
+    } else {
+        "SELECT al.id, al.title, ar.name, al.album_artist_id, al.year, al.art_path, art.rating
+         FROM albums al
+         LEFT JOIN artists ar ON ar.id = al.album_artist_id
+         LEFT JOIN album_ratings art ON art.album_id = al.id
+         LEFT JOIN hidden_albums ha ON ha.album_id = al.id
+         WHERE ha.album_id IS NULL
+           AND (?1 IS NULL OR al.album_artist_id = ?1)
+         ORDER BY ar.sort_name, ar.name, al.year, al.title"
+    };
     let mut stmt = conn.prepare(sql)?;
     let rows = stmt.query_map([artist_id], |row| {
         Ok(AlbumRow {
@@ -140,12 +156,38 @@ mod tests {
         upsert(&conn, "Vheissu", a, Some(2005)).unwrap();
         upsert(&conn, "Redeemer", b, Some(2002)).unwrap();
 
-        let all = list_all(&conn, None).unwrap();
+        let all = list_all(&conn, None, false).unwrap();
         assert_eq!(all.len(), 2);
 
-        let just_a = list_all(&conn, Some(a)).unwrap();
+        let just_a = list_all(&conn, Some(a), false).unwrap();
         assert_eq!(just_a.len(), 1);
         assert_eq!(just_a[0].title, "Vheissu");
+    }
+
+    #[test]
+    fn list_all_excludes_hidden_albums() {
+        let conn = test_connection();
+        let artist_id = artists::upsert(&conn, "Thrice").unwrap();
+        let visible = upsert(&conn, "Vheissu", artist_id, Some(2005)).unwrap();
+        let hidden = upsert(&conn, "The Artist in the Ambulance", artist_id, Some(2003)).unwrap();
+        super::super::hidden_albums::hide(&conn, hidden).unwrap();
+
+        let rows = list_all(&conn, None, false).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, visible);
+    }
+
+    #[test]
+    fn list_all_returns_only_hidden_albums_when_hidden_only_is_true() {
+        let conn = test_connection();
+        let artist_id = artists::upsert(&conn, "Thrice").unwrap();
+        upsert(&conn, "Vheissu", artist_id, Some(2005)).unwrap();
+        let hidden = upsert(&conn, "The Artist in the Ambulance", artist_id, Some(2003)).unwrap();
+        super::super::hidden_albums::hide(&conn, hidden).unwrap();
+
+        let rows = list_all(&conn, None, true).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, hidden);
     }
 
     #[test]
@@ -159,7 +201,7 @@ mod tests {
         set_art(&conn, album_id, Some("/cache/art/1.jpg"), "embedded").unwrap();
 
         assert_eq!(list_missing_art(&conn).unwrap(), Vec::<i64>::new());
-        let rows = list_all(&conn, None).unwrap();
+        let rows = list_all(&conn, None, false).unwrap();
         assert_eq!(rows[0].art_path.as_deref(), Some("/cache/art/1.jpg"));
     }
 }

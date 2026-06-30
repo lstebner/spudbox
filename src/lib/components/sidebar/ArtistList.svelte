@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { ChevronDown, ChevronRight, X } from "@lucide/svelte";
+  import { ChevronDown, ChevronRight, EyeOff, X } from "@lucide/svelte";
   import { library } from "$lib/stores/library.svelte";
   import type { AlbumRow } from "$lib/types";
 
   let query = $state("");
   let manuallyExpanded = $state(new Set<number>());
+  let hiddenExpanded = $state(false);
 
   function toggleExpanded(artistId: number) {
     const next = new Set(manuallyExpanded);
@@ -123,6 +124,47 @@
       {/if}
     </div>
   {/each}
+  {#if library.hiddenAlbums.length > 0}
+    <div class="artist-group hidden-section">
+      <div class="artist-row">
+        <button
+          class="caret"
+          onclick={() => (hiddenExpanded = !hiddenExpanded)}
+          aria-label={hiddenExpanded ? "Collapse hidden albums" : "Expand hidden albums"}
+        >
+          {#if hiddenExpanded}
+            <ChevronDown size={14} />
+          {:else}
+            <ChevronRight size={14} />
+          {/if}
+        </button>
+        <button
+          class="artist-item"
+          class:active={library.isViewingHidden && library.selectedAlbumId === null}
+          onclick={() => { library.selectHidden(); hiddenExpanded = true; }}
+        >
+          <span class="name hidden-label">
+            <EyeOff size={13} />
+            Hidden
+          </span>
+          <span class="count">{library.hiddenAlbums.length}</span>
+        </button>
+      </div>
+      {#if hiddenExpanded}
+        <div class="album-sublist">
+          {#each library.hiddenAlbums as album (album.id)}
+            <button
+              class="album-item"
+              class:active={library.selectedAlbumId === album.id}
+              onclick={() => library.selectAlbum(album.id)}
+            >
+              {album.title}
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
+  {/if}
 </nav>
 
 
@@ -271,6 +313,18 @@
   .album-item.active {
     background: var(--bg-selected);
     color: var(--text-primary);
+  }
+
+  .hidden-section {
+    margin-top: 0.5em;
+    padding-top: 0.5em;
+    border-top: 1px solid var(--border);
+  }
+
+  .hidden-label {
+    display: flex;
+    align-items: center;
+    gap: 0.35em;
   }
 
 </style>

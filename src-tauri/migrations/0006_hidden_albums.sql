@@ -1,0 +1,3 @@
+CREATE TABLE IF NOT EXISTS hidden_albums (
+    album_id INTEGER PRIMARY KEY REFERENCES albums(id) ON DELETE CASCADE
+);

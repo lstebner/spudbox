@@ -9,21 +9,32 @@ function createLibraryStore() {
   // the sidebar can group/search across every artist's albums regardless
   // of what's currently browsed in the main view.
   let allAlbums = $state<AlbumRow[]>([]);
+  let hiddenAlbums = $state<AlbumRow[]>([]);
   let tracks = $state<TrackRow[]>([]);
   let selectedArtistId = $state<number | null>(null);
   let selectedAlbumId = $state<number | null>(null);
+  let isViewingHidden = $state(false);
   let loading = $state(false);
   let hasRoots = $state(true);
 
   async function loadAlbums() {
-    albums = await commands.libraryGetAlbums(selectedArtistId);
+    if (isViewingHidden) {
+      albums = await commands.libraryGetAlbums(null, true);
+    } else {
+      albums = await commands.libraryGetAlbums(selectedArtistId);
+    }
   }
 
   async function loadAllAlbums() {
     allAlbums = await commands.libraryGetAlbums(null);
   }
 
+  async function loadHiddenAlbums() {
+    hiddenAlbums = await commands.libraryGetAlbums(null, true);
+  }
+
   async function selectArtist(artistId: number | null) {
+    isViewingHidden = false;
     selectedArtistId = artistId;
     selectedAlbumId = null;
     await loadAlbums();
@@ -49,6 +60,7 @@ function createLibraryStore() {
   // Albums" — used when navigating into an album from its artist's
   // expanded sublist in the sidebar, where that context is already known.
   async function selectArtistAndAlbum(artistId: number, albumId: number) {
+    isViewingHidden = false;
     selectedArtistId = artistId;
     await loadAlbums();
     await selectAlbum(albumId);
@@ -60,9 +72,23 @@ function createLibraryStore() {
   // to "All Albums" first so the target album is guaranteed to be in the
   // loaded list.
   async function goToAlbum(albumId: number) {
+    isViewingHidden = false;
     selectedArtistId = null;
     await loadAlbums();
     await selectAlbum(albumId);
+  }
+
+  async function selectHidden() {
+    isViewingHidden = true;
+    selectedArtistId = null;
+    selectedAlbumId = null;
+    albums = await commands.libraryGetAlbums(null, true);
+  }
+
+  async function setAlbumHidden(albumId: number, hidden: boolean) {
+    await commands.librarySetAlbumHidden(albumId, hidden);
+    if (selectedAlbumId === albumId) selectedAlbumId = null;
+    await refresh();
   }
 
   async function setAlbumRating(albumId: number, rating: number | null) {
@@ -71,6 +97,7 @@ function createLibraryStore() {
       list.map((a) => (a.id === albumId ? { ...a, rating } : a));
     albums = patch(albums);
     allAlbums = patch(allAlbums);
+    hiddenAlbums = patch(hiddenAlbums);
   }
 
   async function refresh() {
@@ -80,8 +107,13 @@ function createLibraryStore() {
       artists = await commands.libraryGetArtists();
       await loadAlbums();
       await loadAllAlbums();
-      // If the selected album was just removed, clear back to the grid
-      if (selectedAlbumId !== null && !allAlbums.some((a) => a.id === selectedAlbumId)) {
+      await loadHiddenAlbums();
+      // Clear the selected album only if it no longer exists in any list.
+      if (
+        selectedAlbumId !== null &&
+        !allAlbums.some((a) => a.id === selectedAlbumId) &&
+        !hiddenAlbums.some((a) => a.id === selectedAlbumId)
+      ) {
         selectedAlbumId = null;
       }
     } finally {
@@ -120,6 +152,9 @@ function createLibraryStore() {
     get allAlbums() {
       return allAlbums;
     },
+    get hiddenAlbums() {
+      return hiddenAlbums;
+    },
     get tracks() {
       return tracks;
     },
@@ -128,6 +163,9 @@ function createLibraryStore() {
     },
     get selectedAlbumId() {
       return selectedAlbumId;
+    },
+    get isViewingHidden() {
+      return isViewingHidden;
     },
     get loading() {
       return loading;
@@ -139,8 +177,10 @@ function createLibraryStore() {
     selectAlbum,
     selectArtistAndAlbum,
     goToAlbum,
+    selectHidden,
     backToAlbums,
     setAlbumRating,
+    setAlbumHidden,
     refresh,
     rescan,
     addFolder,

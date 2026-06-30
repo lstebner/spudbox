@@ -70,6 +70,7 @@ pub fn run() {
             commands::library::library_get_tracks_by_album,
             commands::library::library_get_artists,
             commands::library::library_get_albums,
+            commands::library::library_set_album_hidden,
             commands::library::library_set_album_rating,
             commands::sync::sync_configure,
             commands::sync::sync_status,

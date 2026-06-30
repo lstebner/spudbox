@@ -50,7 +50,7 @@ mod tests {
         let conn = test_connection();
         let album_id = setup_album(&conn);
         set_rating(&conn, album_id, Some(8.5)).unwrap();
-        let rows = albums::list_all(&conn, None).unwrap();
+        let rows = albums::list_all(&conn, None, false).unwrap();
         assert_eq!(rows[0].rating, Some(8.5));
     }
 
@@ -68,7 +68,7 @@ mod tests {
         let album_id = setup_album(&conn);
         set_rating(&conn, album_id, Some(3.0)).unwrap();
         set_rating(&conn, album_id, Some(9.5)).unwrap();
-        let rows = albums::list_all(&conn, None).unwrap();
+        let rows = albums::list_all(&conn, None, false).unwrap();
         assert_eq!(rows[0].rating, Some(9.5));
     }
 
@@ -78,7 +78,7 @@ mod tests {
         let album_id = setup_album(&conn);
         set_rating(&conn, album_id, Some(5.0)).unwrap();
         set_rating(&conn, album_id, None).unwrap();
-        let rows = albums::list_all(&conn, None).unwrap();
+        let rows = albums::list_all(&conn, None, false).unwrap();
         assert_eq!(rows[0].rating, None);
     }
 
@@ -86,7 +86,7 @@ mod tests {
     fn unrated_album_has_no_row_and_list_all_returns_none() {
         let conn = test_connection();
         setup_album(&conn);
-        let rows = albums::list_all(&conn, None).unwrap();
+        let rows = albums::list_all(&conn, None, false).unwrap();
         assert_eq!(rows[0].rating, None);
     }
 
@@ -134,7 +134,7 @@ mod tests {
         set_rating(&conn, album_id, Some(5.0)).unwrap();
         set_rating(&conn, album_id, None).unwrap();
         set_rating(&conn, album_id, Some(9.0)).unwrap();
-        let rows = albums::list_all(&conn, None).unwrap();
+        let rows = albums::list_all(&conn, None, false).unwrap();
         assert_eq!(rows[0].rating, Some(9.0));
     }
 }
