@@ -7,6 +7,7 @@ mod mpris;
 mod scanner;
 mod state;
 mod sync;
+mod tray;
 
 use std::sync::Arc;
 
@@ -57,6 +58,7 @@ pub fn run() {
             engine_builder.spawn(app.handle().clone(), mpris, pool.clone());
 
             app.manage(AppState { db: pool, player });
+            tray::setup_tray(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
