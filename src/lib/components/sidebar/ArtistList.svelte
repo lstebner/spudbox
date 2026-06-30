@@ -103,7 +103,7 @@
         <button
           class="artist-item"
           class:active={library.selectedArtistId === artist.id && library.selectedAlbumId === null}
-          onclick={() => library.selectArtist(artist.id)}
+          onclick={() => { library.selectArtist(artist.id); toggleExpanded(artist.id); }}
         >
           <span class="name">{artist.name}</span>
           <span class="count">{artist.album_count}</span>
