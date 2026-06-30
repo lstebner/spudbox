@@ -51,6 +51,7 @@ CI (`.github/workflows/ci.yml`) runs both test suites on `pull_request` to `main
 - **Keep PRs focused**: one concern per PR — a bug fix should not also refactor unrelated code; split them into separate PRs.
 - **No magic numbers or strings**: use named constants for anything non-obvious (timeouts, buffer sizes, thresholds, limits).
 - **Accessibility**: follow accessibility best practices throughout the UI — semantic HTML elements, ARIA attributes where needed, keyboard navigability, sufficient color contrast. The goal is for the entire app to be accessibility friendly.
+- **CI system dependencies**: if a new Rust crate pulls in a native Linux library, add its `-dev` package to the `Install system dependencies` step in both `.github/workflows/build-release.yml` and `.github/workflows/ci.yml`. The build-release action will fail at link time if the library is missing.
 
 ## Architecture
 
