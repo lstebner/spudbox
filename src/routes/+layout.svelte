@@ -5,12 +5,12 @@
   import TransportBar from "$lib/components/transport/TransportBar.svelte";
   import SettingsPanel from "$lib/components/settings/SettingsPanel.svelte";
   import { library } from "$lib/stores/library.svelte";
+  import { ui } from "$lib/stores/ui.svelte";
 
   let { children } = $props();
-  let showSettings = $state(false);
 
   $effect(() => {
-    if (library.selectedAlbumId !== null) showSettings = false;
+    if (library.selectedAlbumId !== null) ui.closeSettings();
   });
 
   library.refresh().then(() => library.rescan());
@@ -24,16 +24,16 @@
     <div class="toolbar">
       <button
         class="cog"
-        class:active={showSettings}
-        onclick={() => (showSettings = !showSettings)}
+        class:active={ui.showSettings}
+        onclick={() => (ui.showSettings ? ui.closeSettings() : ui.openSettings())}
         aria-label="Settings"
       >
         <Settings size={20} />
       </button>
     </div>
     <div class="content-body">
-      {#if showSettings}
-        <SettingsPanel onclose={() => (showSettings = false)} />
+      {#if ui.showSettings}
+        <SettingsPanel onclose={() => ui.closeSettings()} />
       {:else}
         {@render children()}
       {/if}

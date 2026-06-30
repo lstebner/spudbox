@@ -3,8 +3,17 @@
   import { convertFileSrc } from "@tauri-apps/api/core";
   import { get } from "svelte/store";
   import { Eye, EyeOff } from "@lucide/svelte";
+  import { open } from "@tauri-apps/plugin-dialog";
   import { library } from "$lib/stores/library.svelte";
+  import { ui } from "$lib/stores/ui.svelte";
   import StarRating from "$lib/components/rating/StarRating.svelte";
+
+  async function addFolder() {
+    const path = await open({ directory: true, multiple: false, title: "Choose a music folder" });
+    if (typeof path === "string") {
+      await library.addFolder(path);
+    }
+  }
 
   const MIN_CARD_WIDTH = 170;
   const CARD_GAP = 20;
@@ -65,7 +74,10 @@
 {#if !library.hasRoots}
   <div class="empty-state">
     <p>No music folder added yet.</p>
-    <p>Use "Add Music Folder" in Settings to get started.</p>
+    <button onclick={addFolder} disabled={library.loading}>
+      {library.loading ? "Scanning…" : "Add Music Folder"}
+    </button>
+    <p class="hint">You can also add folders in <button class="settings-link" onclick={() => ui.openSettings()}>Settings</button>.</p>
   </div>
 {:else}
 <div bind:this={scrollEl} class="grid-scroll">
@@ -118,9 +130,53 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.25em;
+    gap: 1em;
     color: var(--text-secondary);
     text-align: center;
+  }
+
+  .empty-state p {
+    margin: 0;
+  }
+
+  .hint {
+    color: var(--text-tertiary);
+  }
+
+  .settings-link {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: inherit;
+    font-family: inherit;
+    color: inherit;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .settings-link:hover {
+    color: var(--text-secondary);
+  }
+
+  .empty-state button:not(.settings-link) {
+    background: var(--accent);
+    border: none;
+    border-radius: var(--radius);
+    color: #fff;
+    cursor: pointer;
+    padding: 0.5em 1.25em;
+    font-size: 1em;
+    font-family: inherit;
+  }
+
+  .empty-state button:not(.settings-link):hover:not(:disabled) {
+    background: var(--accent-hover);
+  }
+
+  .empty-state button:not(.settings-link):disabled {
+    opacity: 0.5;
+    cursor: default;
   }
 
   .grid-scroll {
