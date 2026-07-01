@@ -60,12 +60,12 @@ fn resolve_genre(conn: &Connection, cache: &mut HashMap<String, i64>, name: &str
 
 fn resolve_album(
     conn: &Connection,
-    cache: &mut HashMap<(String, i64), i64>,
+    cache: &mut HashMap<(String, i64, Option<i64>), i64>,
     title: &str,
     album_artist_id: i64,
     year: Option<i64>,
 ) -> Result<i64, AppError> {
-    let key = (title.to_lowercase(), album_artist_id);
+    let key = (title.to_lowercase(), album_artist_id, year);
     if let Some(id) = cache.get(&key) {
         return Ok(*id);
     }
@@ -128,7 +128,7 @@ pub fn full_scan(
     let mut stats = ScanStats::default();
     let mut artist_cache: HashMap<String, i64> = HashMap::new();
     let mut genre_cache: HashMap<String, i64> = HashMap::new();
-    let mut album_cache: HashMap<(String, i64), i64> = HashMap::new();
+    let mut album_cache: HashMap<(String, i64, Option<i64>), i64> = HashMap::new();
 
     const BATCH_SIZE: usize = 500;
     let mut processed_in_batch = 0usize;
@@ -224,12 +224,38 @@ pub fn full_scan(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::path::PathBuf;
     use std::time::Instant;
 
     use crate::db::{pool, schema};
+    use crate::db::queries::artists;
 
-    use super::full_scan;
+    use super::{full_scan, resolve_album};
+
+    #[test]
+    fn same_named_albums_with_different_years_get_distinct_ids() {
+        let conn = schema::test_connection();
+        let artist_id = artists::upsert(&conn, "Cursive").unwrap();
+        let mut cache = HashMap::new();
+
+        let original_id = resolve_album(&conn, &mut cache, "Domestica", artist_id, Some(2000)).unwrap();
+        let remaster_id = resolve_album(&conn, &mut cache, "Domestica", artist_id, Some(2022)).unwrap();
+
+        assert_ne!(original_id, remaster_id, "same-named albums with different years must be separate entries");
+    }
+
+    #[test]
+    fn same_named_album_with_same_year_reuses_the_same_id() {
+        let conn = schema::test_connection();
+        let artist_id = artists::upsert(&conn, "Cursive").unwrap();
+        let mut cache = HashMap::new();
+
+        let first_id = resolve_album(&conn, &mut cache, "Domestica", artist_id, Some(2000)).unwrap();
+        let second_id = resolve_album(&conn, &mut cache, "Domestica", artist_id, Some(2000)).unwrap();
+
+        assert_eq!(first_id, second_id, "the same album encountered twice in one scan should reuse the same id");
+    }
 
     /// Exercises the scanner against the user's real library rather than a
     /// synthetic fixture, per the plan's verification step. Ignored by
