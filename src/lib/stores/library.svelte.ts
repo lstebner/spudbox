@@ -100,6 +100,14 @@ function createLibraryStore() {
     hiddenAlbums = patch(hiddenAlbums);
   }
 
+  function markAlbumPlayed(albumId: number) {
+    const clear = (list: AlbumRow[]) =>
+      list.map((a) => (a.id === albumId ? { ...a, is_new: false } : a));
+    albums = clear(albums);
+    allAlbums = clear(allAlbums);
+    hiddenAlbums = clear(hiddenAlbums);
+  }
+
   async function refresh() {
     loading = true;
     try {
@@ -184,6 +192,7 @@ function createLibraryStore() {
     backToAlbums,
     setAlbumRating,
     setAlbumHidden,
+    markAlbumPlayed,
     refresh,
     rescan,
     addFolder,

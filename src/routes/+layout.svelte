@@ -1,16 +1,23 @@
 <script lang="ts">
   import "$lib/styles/theme.css";
   import { Settings } from "@lucide/svelte";
+  import { untrack } from "svelte";
   import ArtistList from "$lib/components/sidebar/ArtistList.svelte";
   import TransportBar from "$lib/components/transport/TransportBar.svelte";
   import SettingsPanel from "$lib/components/settings/SettingsPanel.svelte";
   import { library } from "$lib/stores/library.svelte";
+  import { player } from "$lib/stores/player.svelte";
   import { ui } from "$lib/stores/ui.svelte";
 
   let { children } = $props();
 
   $effect(() => {
     if (library.selectedAlbumId !== null) ui.closeSettings();
+  });
+
+  $effect(() => {
+    const albumId = player.snapshot.album_id;
+    if (albumId !== null) untrack(() => library.markAlbumPlayed(albumId));
   });
 
   library.refresh().then(() => library.rescan());
@@ -22,6 +29,26 @@
   </aside>
   <main class="content">
     <div class="toolbar">
+      <div class="toolbar-left">
+        {#if library.selectedAlbumId === null && !ui.showSettings}
+          <div class="sort-tabs" role="group" aria-label="Sort albums by">
+            <button
+              class="sort-tab"
+              class:active={ui.albumSort === 'date_added'}
+              onclick={() => ui.setAlbumSort('date_added')}
+            >
+              Newest
+            </button>
+            <button
+              class="sort-tab"
+              class:active={ui.albumSort === 'name'}
+              onclick={() => ui.setAlbumSort('name')}
+            >
+              Name
+            </button>
+          </div>
+        {/if}
+      </div>
       <button
         class="cog"
         class:active={ui.showSettings}
@@ -81,9 +108,41 @@
     height: var(--toolbar-height);
     display: flex;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: space-between;
     padding: 0 0.75em;
     border-bottom: 1px solid var(--border);
+  }
+
+  .toolbar-left {
+    display: flex;
+    align-items: center;
+  }
+
+  .sort-tabs {
+    display: flex;
+    gap: 2px;
+    background: var(--bg-hover);
+    border-radius: var(--radius-sm);
+    padding: 2px;
+  }
+
+  .sort-tab {
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--text-tertiary);
+    cursor: pointer;
+    font-size: 0.8em;
+    padding: 3px 10px;
+  }
+
+  .sort-tab.active {
+    background: var(--bg-selected);
+    color: var(--text-primary);
+  }
+
+  .sort-tab:hover:not(.active) {
+    color: var(--text-secondary);
   }
 
   .cog {

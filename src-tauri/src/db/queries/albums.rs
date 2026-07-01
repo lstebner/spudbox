@@ -1,7 +1,18 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use rusqlite::{params, OptionalExtension, Connection};
 use serde::Serialize;
 
 use crate::error::AppError;
+
+const NEW_ALBUM_THRESHOLD_SECS: i64 = 5 * 86_400;
+
+fn now_unix() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
+}
 
 #[derive(Debug, Serialize)]
 pub struct AlbumRow {
@@ -12,6 +23,8 @@ pub struct AlbumRow {
     pub year: Option<i64>,
     pub art_path: Option<String>,
     pub rating: Option<f64>,
+    pub date_added: Option<i64>,
+    pub is_new: bool,
 }
 
 pub fn list_all(
@@ -19,28 +32,43 @@ pub fn list_all(
     artist_id: Option<i64>,
     hidden_only: bool,
 ) -> Result<Vec<AlbumRow>, AppError> {
+    let new_since = now_unix() - NEW_ALBUM_THRESHOLD_SECS;
+    let is_new_expr =
+        "CASE WHEN (al.date_added IS NOT NULL AND al.date_added > ?2
+              AND NOT EXISTS (
+                  SELECT 1 FROM track_stats ts
+                  JOIN tracks t ON t.id = ts.track_id
+                  WHERE t.album_id = al.id AND ts.play_count > 0
+              )) THEN 1 ELSE 0 END";
+
     let sql = if hidden_only {
-        "SELECT al.id, al.title, ar.name, al.album_artist_id, al.year, al.art_path, art.rating
-         FROM albums al
-         JOIN hidden_albums ha ON ha.album_id = al.id
-         LEFT JOIN artists ar ON ar.id = al.album_artist_id
-         LEFT JOIN album_ratings art ON art.album_id = al.id
-         WHERE (?1 IS NULL OR al.album_artist_id = ?1)
-           AND EXISTS (SELECT 1 FROM tracks WHERE album_id = al.id AND is_archived = 0)
-         ORDER BY ar.sort_name, ar.name, al.year, al.title"
+        format!(
+            "SELECT al.id, al.title, ar.name, al.album_artist_id, al.year, al.art_path,
+                    art.rating, al.date_added, {is_new_expr} AS is_new
+             FROM albums al
+             JOIN hidden_albums ha ON ha.album_id = al.id
+             LEFT JOIN artists ar ON ar.id = al.album_artist_id
+             LEFT JOIN album_ratings art ON art.album_id = al.id
+             WHERE (?1 IS NULL OR al.album_artist_id = ?1)
+               AND EXISTS (SELECT 1 FROM tracks WHERE album_id = al.id AND is_archived = 0)
+             ORDER BY ar.sort_name, ar.name, al.year, al.title"
+        )
     } else {
-        "SELECT al.id, al.title, ar.name, al.album_artist_id, al.year, al.art_path, art.rating
-         FROM albums al
-         LEFT JOIN artists ar ON ar.id = al.album_artist_id
-         LEFT JOIN album_ratings art ON art.album_id = al.id
-         LEFT JOIN hidden_albums ha ON ha.album_id = al.id
-         WHERE ha.album_id IS NULL
-           AND (?1 IS NULL OR al.album_artist_id = ?1)
-           AND EXISTS (SELECT 1 FROM tracks WHERE album_id = al.id AND is_archived = 0)
-         ORDER BY ar.sort_name, ar.name, al.year, al.title"
+        format!(
+            "SELECT al.id, al.title, ar.name, al.album_artist_id, al.year, al.art_path,
+                    art.rating, al.date_added, {is_new_expr} AS is_new
+             FROM albums al
+             LEFT JOIN artists ar ON ar.id = al.album_artist_id
+             LEFT JOIN album_ratings art ON art.album_id = al.id
+             LEFT JOIN hidden_albums ha ON ha.album_id = al.id
+             WHERE ha.album_id IS NULL
+               AND (?1 IS NULL OR al.album_artist_id = ?1)
+               AND EXISTS (SELECT 1 FROM tracks WHERE album_id = al.id AND is_archived = 0)
+             ORDER BY ar.sort_name, ar.name, al.year, al.title"
+        )
     };
-    let mut stmt = conn.prepare(sql)?;
-    let rows = stmt.query_map([artist_id], |row| {
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params![artist_id, new_since], |row| {
         Ok(AlbumRow {
             id: row.get(0)?,
             title: row.get(1)?,
@@ -49,6 +77,8 @@ pub fn list_all(
             year: row.get(4)?,
             art_path: row.get(5)?,
             rating: row.get(6)?,
+            date_added: row.get(7)?,
+            is_new: row.get(8)?,
         })
     })?;
     rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
@@ -60,11 +90,12 @@ pub fn upsert(
     album_artist_id: i64,
     year: Option<i64>,
 ) -> Result<i64, AppError> {
+    let now = now_unix();
     let id: i64 = conn.query_row(
-        "INSERT INTO albums (title, album_artist_id, year) VALUES (?1, ?2, ?3)
+        "INSERT INTO albums (title, album_artist_id, year, date_added) VALUES (?1, ?2, ?3, ?4)
          ON CONFLICT(title, album_artist_id, year) DO UPDATE SET title = excluded.title
          RETURNING id",
-        params![title, album_artist_id, year],
+        params![title, album_artist_id, year, now],
         |row| row.get(0),
     )?;
     Ok(id)
@@ -114,10 +145,10 @@ pub fn set_art(conn: &Connection, album_id: i64, art_path: Option<&str>, art_sou
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::queries::{artists, tracks};
+    use crate::db::queries::{artists, stats, tracks};
     use crate::db::schema::test_connection;
 
-    fn insert_active_track(conn: &Connection, path: &str, artist_id: i64, album_id: i64) {
+    fn insert_active_track(conn: &Connection, path: &str, artist_id: i64, album_id: i64) -> i64 {
         tracks::upsert(conn, &tracks::NewTrack {
             path,
             folder_path: "/music",
@@ -136,7 +167,7 @@ mod tests {
             file_size: 1_000,
             file_mtime: 0,
             now: 0,
-        }).unwrap();
+        }).unwrap()
     }
 
     #[test]
@@ -266,5 +297,46 @@ mod tests {
         assert_eq!(list_missing_art(&conn).unwrap(), Vec::<i64>::new());
         let rows = list_all(&conn, None, false).unwrap();
         assert_eq!(rows[0].art_path.as_deref(), Some("/cache/art/1.jpg"));
+    }
+
+    #[test]
+    fn is_new_is_true_for_recently_added_unplayed_album() {
+        let conn = test_connection();
+        let artist_id = artists::upsert(&conn, "Thrice").unwrap();
+        let album_id = upsert(&conn, "Vheissu", artist_id, Some(2005)).unwrap();
+        insert_active_track(&conn, "/music/a.flac", artist_id, album_id);
+
+        let rows = list_all(&conn, None, false).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].is_new, "a freshly added unplayed album should be new");
+    }
+
+    #[test]
+    fn is_new_is_false_after_any_track_is_played() {
+        let conn = test_connection();
+        let artist_id = artists::upsert(&conn, "Thrice").unwrap();
+        let album_id = upsert(&conn, "Vheissu", artist_id, Some(2005)).unwrap();
+        let track_id = insert_active_track(&conn, "/music/a.flac", artist_id, album_id);
+        stats::record_play(&conn, track_id, 1_000).unwrap();
+
+        let rows = list_all(&conn, None, false).unwrap();
+        assert!(!rows[0].is_new, "an album with at least one play should not be new");
+    }
+
+    #[test]
+    fn is_new_is_false_when_date_added_is_older_than_threshold() {
+        let conn = test_connection();
+        let artist_id = artists::upsert(&conn, "Thrice").unwrap();
+        let album_id = upsert(&conn, "Vheissu", artist_id, Some(2005)).unwrap();
+        insert_active_track(&conn, "/music/a.flac", artist_id, album_id);
+
+        let six_days_ago = now_unix() - 6 * 86_400;
+        conn.execute(
+            "UPDATE albums SET date_added = ?1 WHERE id = ?2",
+            params![six_days_ago, album_id],
+        ).unwrap();
+
+        let rows = list_all(&conn, None, false).unwrap();
+        assert!(!rows[0].is_new, "an album added more than 5 days ago should not be new");
     }
 }
