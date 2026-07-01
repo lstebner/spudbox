@@ -1,16 +1,23 @@
 <script lang="ts">
   import "$lib/styles/theme.css";
   import { Settings } from "@lucide/svelte";
+  import { untrack } from "svelte";
   import ArtistList from "$lib/components/sidebar/ArtistList.svelte";
   import TransportBar from "$lib/components/transport/TransportBar.svelte";
   import SettingsPanel from "$lib/components/settings/SettingsPanel.svelte";
   import { library } from "$lib/stores/library.svelte";
-  import { ui } from "$lib/stores/ui.svelte";
+  import { player } from "$lib/stores/player.svelte";
+  import { ui, type AlbumSort } from "$lib/stores/ui.svelte";
 
   let { children } = $props();
 
   $effect(() => {
     if (library.selectedAlbumId !== null) ui.closeSettings();
+  });
+
+  $effect(() => {
+    const albumId = player.snapshot.album_id;
+    if (albumId !== null) untrack(() => library.markAlbumPlayed(albumId));
   });
 
   library.refresh().then(() => library.rescan());
@@ -22,6 +29,23 @@
   </aside>
   <main class="content">
     <div class="toolbar">
+      <div class="toolbar-left">
+        {#if library.selectedAlbumId === null && !ui.showSettings}
+          <div class="sort-control">
+            <span class="sort-label">Sort by</span>
+            <select
+              class="sort-select"
+              aria-label="Sort albums by"
+              value={ui.albumSort}
+              onchange={(e) => ui.setAlbumSort(e.currentTarget.value as AlbumSort)}
+            >
+              <option value="date_added">Newest first</option>
+              <option value="artist_name">Artist name</option>
+              <option value="album_name">Album name</option>
+            </select>
+          </div>
+        {/if}
+      </div>
       <button
         class="cog"
         class:active={ui.showSettings}
@@ -81,9 +105,45 @@
     height: var(--toolbar-height);
     display: flex;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: space-between;
     padding: 0 0.75em;
     border-bottom: 1px solid var(--border);
+  }
+
+  .toolbar-left {
+    display: flex;
+    align-items: center;
+  }
+
+  .sort-control {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+  }
+
+  .sort-label {
+    color: var(--text-tertiary);
+    white-space: nowrap;
+  }
+
+  .sort-select {
+    appearance: none;
+    background-color: var(--bg-hover);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2395959c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.5em center;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: inherit;
+    padding: 0.4em 1.8em 0.4em 0.6em;
+    outline: none;
+  }
+
+  .sort-select:focus {
+    border-color: var(--accent);
   }
 
   .cog {

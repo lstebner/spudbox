@@ -47,7 +47,23 @@
       : MIN_CARD_WIDTH,
   );
   const rowHeight = $derived(cardWidth + TEXT_HEIGHT + CARD_GAP);
-  const rowCount = $derived(Math.ceil(library.albums.length / columnsPerRow));
+
+  const sortedAlbums = $derived.by(() => {
+    const albums = library.albums;
+    if (ui.albumSort === 'artist_name') {
+      return [...albums].sort((a, b) => {
+        const cmpArtist = a.album_artist.localeCompare(b.album_artist);
+        if (cmpArtist !== 0) return cmpArtist;
+        return a.title.localeCompare(b.title);
+      });
+    }
+    if (ui.albumSort === 'album_name') {
+      return [...albums].sort((a, b) => a.title.localeCompare(b.title));
+    }
+    return [...albums].sort((a, b) => (b.date_added ?? 0) - (a.date_added ?? 0));
+  });
+
+  const rowCount = $derived(Math.ceil(sortedAlbums.length / columnsPerRow));
 
   const virtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
     count: 0,
@@ -67,7 +83,7 @@
 
   function albumsForRow(rowIndex: number) {
     const start = rowIndex * columnsPerRow;
-    return library.albums.slice(start, start + columnsPerRow);
+    return sortedAlbums.slice(start, start + columnsPerRow);
   }
 </script>
 
@@ -103,6 +119,9 @@
                 <StarRating rating={album.rating} readonly size={12} />
               </div>
             </button>
+            {#if album.is_new}
+              <div class="new-badge" aria-label="New">New</div>
+            {/if}
             <button
               class="hide-toggle"
               aria-label={library.isViewingHidden ? "Show album" : "Hide album"}
@@ -221,6 +240,23 @@
     background: var(--bg-hover);
     margin-bottom: 0.5em;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  }
+
+  .new-badge {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.62em;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    padding: 3px 8px;
+    border-radius: var(--radius-sm);
+    pointer-events: none;
+    text-transform: uppercase;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+    z-index: 1;
   }
 
   .hide-toggle {
