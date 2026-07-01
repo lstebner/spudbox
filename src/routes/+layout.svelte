@@ -31,16 +31,19 @@
     <div class="toolbar">
       <div class="toolbar-left">
         {#if library.selectedAlbumId === null && !ui.showSettings}
-          <select
-            class="sort-select"
-            aria-label="Sort albums by"
-            value={ui.albumSort}
-            onchange={(e) => ui.setAlbumSort(e.currentTarget.value as AlbumSort)}
-          >
-            <option value="date_added">Newest first</option>
-            <option value="artist_name">Artist name</option>
-            <option value="album_name">Album name</option>
-          </select>
+          <div class="sort-control">
+            <span class="sort-label">Sort by</span>
+            <select
+              class="sort-select"
+              aria-label="Sort albums by"
+              value={ui.albumSort}
+              onchange={(e) => ui.setAlbumSort(e.currentTarget.value as AlbumSort)}
+            >
+              <option value="date_added">Newest first</option>
+              <option value="artist_name">Artist name</option>
+              <option value="album_name">Album name</option>
+            </select>
+          </div>
         {/if}
       </div>
       <button
@@ -112,24 +115,35 @@
     align-items: center;
   }
 
+  .sort-control {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+  }
+
+  .sort-label {
+    color: var(--text-tertiary);
+    white-space: nowrap;
+  }
+
   .sort-select {
-    background: var(--bg-hover);
-    border: none;
-    border-radius: var(--radius-sm);
-    color: var(--text-secondary);
+    appearance: none;
+    background-color: var(--bg-hover);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2395959c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.5em center;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-primary);
     cursor: pointer;
-    font-size: 0.8em;
     font-family: inherit;
-    padding: 4px 8px;
+    font-size: inherit;
+    padding: 0.4em 1.8em 0.4em 0.6em;
     outline: none;
   }
 
-  .sort-select:hover {
-    color: var(--text-primary);
-  }
-
   .sort-select:focus {
-    outline: 1px solid var(--accent);
+    border-color: var(--accent);
   }
 
   .cog {
