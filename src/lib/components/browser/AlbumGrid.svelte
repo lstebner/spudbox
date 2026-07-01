@@ -50,12 +50,15 @@
 
   const sortedAlbums = $derived.by(() => {
     const albums = library.albums;
-    if (ui.albumSort === 'name') {
+    if (ui.albumSort === 'artist_name') {
       return [...albums].sort((a, b) => {
         const cmpArtist = a.album_artist.localeCompare(b.album_artist);
         if (cmpArtist !== 0) return cmpArtist;
         return a.title.localeCompare(b.title);
       });
+    }
+    if (ui.albumSort === 'album_name') {
+      return [...albums].sort((a, b) => a.title.localeCompare(b.title));
     }
     return [...albums].sort((a, b) => (b.date_added ?? 0) - (a.date_added ?? 0));
   });

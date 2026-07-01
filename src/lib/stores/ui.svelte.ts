@@ -1,4 +1,4 @@
-export type AlbumSort = 'date_added' | 'name';
+export type AlbumSort = 'date_added' | 'artist_name' | 'album_name';
 
 function createUiStore() {
   let showSettings = $state(false);

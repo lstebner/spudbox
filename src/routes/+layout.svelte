@@ -7,7 +7,7 @@
   import SettingsPanel from "$lib/components/settings/SettingsPanel.svelte";
   import { library } from "$lib/stores/library.svelte";
   import { player } from "$lib/stores/player.svelte";
-  import { ui } from "$lib/stores/ui.svelte";
+  import { ui, type AlbumSort } from "$lib/stores/ui.svelte";
 
   let { children } = $props();
 
@@ -31,22 +31,16 @@
     <div class="toolbar">
       <div class="toolbar-left">
         {#if library.selectedAlbumId === null && !ui.showSettings}
-          <div class="sort-tabs" role="group" aria-label="Sort albums by">
-            <button
-              class="sort-tab"
-              class:active={ui.albumSort === 'date_added'}
-              onclick={() => ui.setAlbumSort('date_added')}
-            >
-              Newest
-            </button>
-            <button
-              class="sort-tab"
-              class:active={ui.albumSort === 'name'}
-              onclick={() => ui.setAlbumSort('name')}
-            >
-              Name
-            </button>
-          </div>
+          <select
+            class="sort-select"
+            aria-label="Sort albums by"
+            value={ui.albumSort}
+            onchange={(e) => ui.setAlbumSort(e.currentTarget.value as AlbumSort)}
+          >
+            <option value="date_added">Newest first</option>
+            <option value="artist_name">Artist name</option>
+            <option value="album_name">Album name</option>
+          </select>
         {/if}
       </div>
       <button
@@ -118,31 +112,24 @@
     align-items: center;
   }
 
-  .sort-tabs {
-    display: flex;
-    gap: 2px;
+  .sort-select {
     background: var(--bg-hover);
-    border-radius: var(--radius-sm);
-    padding: 2px;
-  }
-
-  .sort-tab {
-    background: none;
     border: none;
     border-radius: var(--radius-sm);
-    color: var(--text-tertiary);
+    color: var(--text-secondary);
     cursor: pointer;
     font-size: 0.8em;
-    padding: 3px 10px;
+    font-family: inherit;
+    padding: 4px 8px;
+    outline: none;
   }
 
-  .sort-tab.active {
-    background: var(--bg-selected);
+  .sort-select:hover {
     color: var(--text-primary);
   }
 
-  .sort-tab:hover:not(.active) {
-    color: var(--text-secondary);
+  .sort-select:focus {
+    outline: 1px solid var(--accent);
   }
 
   .cog {
