@@ -10,7 +10,7 @@ use crate::db::queries::{scan_roots, tracks};
 use crate::error::AppError;
 use crate::state::DbPool;
 
-use super::{SyncEntry, SyncMode, SyncPreview, SyncPreviewProgress, SyncProgress, SyncResult};
+use super::{DeviceKind, SyncEntry, SyncMode, SyncPreview, SyncPreviewProgress, SyncProgress, SyncResult};
 
 const PREVIEW_PROGRESS_EVENT: &str = "device-preview-progress";
 const SYNC_PROGRESS_EVENT: &str = "device-sync-progress";
@@ -91,6 +91,7 @@ pub fn preview_sync(
 /// Returns actual counts of files copied/deleted and whether the sync was cancelled.
 pub fn perform_sync(
     device_music_path: PathBuf,
+    device_kind: DeviceKind,
     mode: SyncMode,
     preview: SyncPreview,
     db: DbPool,
@@ -121,7 +122,7 @@ pub fn perform_sync(
         // Sanitize for FAT32/exFAT: the library path may contain characters
         // (e.g. `?`) that are valid on Linux but forbidden on device filesystems.
         let destination = device_music_path.join(sanitize_path_for_fat(&entry.relative_path));
-        copy_to_device(&source, &destination)?;
+        copy_to_device(&source, &destination, &device_kind)?;
 
         copied += 1;
         current += 1;
@@ -283,28 +284,36 @@ fn parse_display_info(relative_path: &str) -> (String, String, String) {
     (artist, album, title)
 }
 
-/// Copies `source` to `destination`, retrying up to `MAX_COPY_RETRIES` times
-/// on failure. Each retry removes any partial file and waits `COPY_RETRY_DELAY`
-/// before trying again, giving the MTP session time to recover from USB hiccups
-/// that cause transient EIO errors during long transfers.
-fn copy_to_device(source: &Path, destination: &Path) -> Result<(), AppError> {
+/// Copies `source` to `destination` using a strategy appropriate for the device
+/// kind. MTP via gvfs-fuse requires `io::copy` (plain read/write loop) because
+/// `std::fs::copy` uses `copy_file_range` which gvfs-fuse rejects with EOPNOTSUPP,
+/// and retries with backoff because MTP sessions can go stale mid-transfer.
+/// USB storage supports `std::fs::copy` directly and rarely needs retries.
+fn copy_to_device(source: &Path, destination: &Path, device_kind: &DeviceKind) -> Result<(), AppError> {
+    if let Some(parent) = destination.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let max_retries = match device_kind {
+        DeviceKind::Mtp => MAX_COPY_RETRIES,
+        DeviceKind::UsbStorage => 0,
+    };
+
     let mut last_error: Option<std::io::Error> = None;
-    for attempt in 0..=MAX_COPY_RETRIES {
+    for attempt in 0..=max_retries {
         if attempt > 0 {
             let _ = std::fs::remove_file(destination);
             std::thread::sleep(COPY_RETRY_DELAY);
         }
-        let result = (|| -> Result<(), std::io::Error> {
-            if let Some(parent) = destination.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            // std::fs::copy uses copy_file_range on Linux, which gvfs-fuse returns
-            // EOPNOTSUPP (os error 95) for. Read/write via io::copy works correctly.
-            let mut source_file = std::fs::File::open(source)?;
-            let mut destination_file = std::fs::File::create(destination)?;
-            std::io::copy(&mut source_file, &mut destination_file)?;
-            Ok(())
-        })();
+        let result = match device_kind {
+            DeviceKind::Mtp => (|| -> Result<(), std::io::Error> {
+                let mut source_file = std::fs::File::open(source)?;
+                let mut destination_file = std::fs::File::create(destination)?;
+                std::io::copy(&mut source_file, &mut destination_file)?;
+                Ok(())
+            })(),
+            DeviceKind::UsbStorage => std::fs::copy(source, destination).map(|_| ()),
+        };
         match result {
             Ok(()) => return Ok(()),
             Err(error) => last_error = Some(error),

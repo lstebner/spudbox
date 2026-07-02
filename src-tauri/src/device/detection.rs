@@ -3,12 +3,13 @@ use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter};
 use walkdir::WalkDir;
 
-use super::DeviceStatus;
+use super::{DeviceKind, DeviceStatus};
 
 const DEVICE_STATUS_EVENT: &str = "device-status-changed";
 const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(3);
 
-pub struct MtpMount {
+pub struct DeviceMount {
+    pub kind: DeviceKind,
     pub mount_path: PathBuf,
     pub device_name: String,
 }
@@ -16,7 +17,7 @@ pub struct MtpMount {
 /// Returns the gvfs directory root for any connected MTP device, or `None`
 /// if no MTP mount is present. Uses `$XDG_RUNTIME_DIR/gvfs/` (the standard
 /// location on systemd/GNOME Linux desktops for gvfs auto-mounts).
-pub fn find_mtp_mount() -> Option<MtpMount> {
+fn find_mtp_mount() -> Option<DeviceMount> {
     let runtime_dir = std::env::var("XDG_RUNTIME_DIR").ok()?;
     let gvfs_dir = Path::new(&runtime_dir).join("gvfs");
 
@@ -25,10 +26,41 @@ pub fn find_mtp_mount() -> Option<MtpMount> {
             let mount_path = entry.path();
             let device_name = first_subdirectory_name(&mount_path)
                 .unwrap_or_else(|| "MTP Device".to_string());
-            return Some(MtpMount { mount_path, device_name });
+            return Some(DeviceMount { kind: DeviceKind::Mtp, mount_path, device_name });
         }
     }
     None
+}
+
+/// Returns the first USB mass storage mount found under the udisks2 standard
+/// locations (`/run/media/$USER/` and `/media/$USER/`), or `None` if none
+/// are present. These paths are only populated with removable media, so there
+/// is no risk of accidentally detecting the system disk.
+fn find_usb_storage_mount() -> Option<DeviceMount> {
+    let username = std::env::var("USER")
+        .or_else(|_| std::env::var("LOGNAME"))
+        .ok()?;
+    for base_dir in [format!("/run/media/{username}"), format!("/media/{username}")] {
+        if let Ok(entries) = std::fs::read_dir(&base_dir) {
+            for entry in entries.flatten() {
+                if entry.file_type().is_ok_and(|file_type| file_type.is_dir()) {
+                    let device_name = entry.file_name().to_string_lossy().into_owned();
+                    return Some(DeviceMount {
+                        kind: DeviceKind::UsbStorage,
+                        mount_path: entry.path(),
+                        device_name,
+                    });
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Returns the first connected device mount, preferring MTP over USB storage
+/// when both are present.
+pub fn find_device_mount() -> Option<DeviceMount> {
+    find_mtp_mount().or_else(find_usb_storage_mount)
 }
 
 /// Returns the name of the first directory entry inside `path`, used to
@@ -124,18 +156,21 @@ pub fn start_detection_loop(app_handle: AppHandle) {
         let mut last_connected = false;
 
         loop {
-            let mount = find_mtp_mount();
+            let mount = find_device_mount();
             let currently_connected = mount.is_some();
 
             if currently_connected != last_connected {
                 let status = match mount {
                     Some(m) => {
                         let detected_music_subfolder = find_music_folders(&m.mount_path).into_iter().next();
-                        if let Some(ref subfolder) = detected_music_subfolder {
-                            spawn_gvfs_cache_warmup(m.mount_path.join(subfolder));
+                        if m.kind == DeviceKind::Mtp {
+                            if let Some(ref subfolder) = detected_music_subfolder {
+                                spawn_gvfs_cache_warmup(m.mount_path.join(subfolder));
+                            }
                         }
                         DeviceStatus {
                             connected: true,
+                            kind: m.kind,
                             device_name: m.device_name,
                             mount_path: m.mount_path.to_string_lossy().into_owned(),
                             detected_music_subfolder,

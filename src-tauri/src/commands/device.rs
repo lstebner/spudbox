@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::db::queries::settings;
-use crate::device::{detection, sync, DeviceStatus, SyncMode, SyncPreview, SyncResult};
+use crate::device::{detection, sync, DeviceKind, DeviceStatus, SyncMode, SyncPreview, SyncResult};
 use crate::error::AppError;
 use crate::state::AppState;
 
@@ -13,7 +13,7 @@ const SETTING_DEVICE_MUSIC_SUBFOLDER: &str = "device_music_subfolder";
 /// directory synchronously so the result is always up-to-date on first load.
 #[tauri::command]
 pub fn device_get_status(state: State<AppState>) -> Result<DeviceStatus, AppError> {
-    match detection::find_mtp_mount() {
+    match detection::find_device_mount() {
         Some(mount) => {
             let conn = state.db.get()?;
             let saved_subfolder = settings::get(&conn, SETTING_DEVICE_MUSIC_SUBFOLDER)?;
@@ -21,6 +21,7 @@ pub fn device_get_status(state: State<AppState>) -> Result<DeviceStatus, AppErro
                 .or_else(|| detection::find_music_folders(&mount.mount_path).into_iter().next());
             Ok(DeviceStatus {
                 connected: true,
+                kind: mount.kind,
                 device_name: mount.device_name,
                 mount_path: mount.mount_path.to_string_lossy().into_owned(),
                 detected_music_subfolder,
@@ -39,8 +40,8 @@ pub async fn device_find_music_folders(
 ) -> Result<Vec<String>, AppError> {
     let db = state.db.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let mount = detection::find_mtp_mount()
-            .ok_or_else(|| AppError::Device("no MTP device connected".to_string()))?;
+        let mount = detection::find_device_mount()
+            .ok_or_else(|| AppError::Device("no device connected".to_string()))?;
         // Surface any previously saved choice at the top so the UI can
         // pre-select it, then append any additionally detected folders.
         let conn = db.get()?;
@@ -89,8 +90,8 @@ pub async fn device_preview_sync(
     cancel.store(false, Ordering::SeqCst);
     let db = state.db.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let mount = detection::find_mtp_mount()
-            .ok_or_else(|| AppError::Device("no MTP device connected".to_string()))?;
+        let mount = detection::find_device_mount()
+            .ok_or_else(|| AppError::Device("no device connected".to_string()))?;
         let device_music_path = mount.mount_path.join(&music_subfolder);
         sync::preview_sync(&device_music_path, &db, &app, &cancel)
     })
@@ -133,10 +134,10 @@ pub async fn device_perform_sync(
     let app_for_sync = app.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         let outcome = (|| {
-            let mount = detection::find_mtp_mount()
-                .ok_or_else(|| AppError::Device("no MTP device connected".to_string()))?;
+            let mount = detection::find_device_mount()
+                .ok_or_else(|| AppError::Device("no device connected".to_string()))?;
             let device_music_path = mount.mount_path.join(&music_subfolder);
-            sync::perform_sync(device_music_path, mode, preview, db, app_for_sync, cancel)
+            sync::perform_sync(device_music_path, mount.kind, mode, preview, db, app_for_sync, cancel)
         })();
         sync_running.store(false, Ordering::SeqCst);
         outcome

@@ -3,12 +3,20 @@ pub mod sync;
 
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum DeviceKind {
+    Mtp,
+    UsbStorage,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct DeviceStatus {
     pub connected: bool,
-    /// Display name derived from the first directory inside the gvfs mount.
+    pub kind: DeviceKind,
+    /// Display name derived from the device mount.
     pub device_name: String,
-    /// Absolute path to the gvfs MTP mount root (e.g. /run/user/1000/gvfs/mtp:host=...).
+    /// Absolute path to the mount root.
     pub mount_path: String,
     /// Music subfolder relative to mount root, either from saved settings or
     /// auto-detected. `None` if no device is connected or no folder was found.
@@ -19,6 +27,7 @@ impl DeviceStatus {
     pub fn disconnected() -> Self {
         DeviceStatus {
             connected: false,
+            kind: DeviceKind::Mtp,
             device_name: String::new(),
             mount_path: String::new(),
             detected_music_subfolder: None,

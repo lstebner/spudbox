@@ -79,8 +79,11 @@ export type SyncStatus = {
   machine_id: string;
 };
 
+export type DeviceKind = "mtp" | "usb_storage";
+
 export type DeviceStatus = {
   connected: boolean;
+  kind: DeviceKind;
   device_name: string;
   mount_path: string;
   detected_music_subfolder: string | null;

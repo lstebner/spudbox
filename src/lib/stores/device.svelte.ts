@@ -8,11 +8,12 @@ import {
   onDeviceSyncEnded,
 } from "$lib/api/events";
 import { ui } from "$lib/stores/ui.svelte";
-import type { DeviceStatus, DeviceSyncMode, DeviceSyncPreview, DeviceSyncProgress, DeviceSyncResult } from "$lib/types";
+import type { DeviceKind, DeviceStatus, DeviceSyncMode, DeviceSyncPreview, DeviceSyncProgress, DeviceSyncResult } from "$lib/types";
 
 function createDeviceStore() {
   let status = $state<DeviceStatus>({
     connected: false,
+    kind: "mtp" as DeviceKind,
     device_name: "",
     mount_path: "",
     detected_music_subfolder: null,
