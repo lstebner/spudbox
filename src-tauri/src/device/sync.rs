@@ -31,6 +31,7 @@ const AUDIO_EXTENSIONS: &[&str] = &["flac", "mp3", "aac", "m4a", "wav", "ogg", "
 /// Returns `AppError::Cancelled` immediately if `cancel` is set mid-walk.
 pub fn preview_sync(
     device_music_path: &Path,
+    device_mount_path: String,
     db: &DbPool,
     app_handle: &AppHandle,
     cancel: &Arc<AtomicBool>,
@@ -80,7 +81,7 @@ pub fn preview_sync(
     let required_bytes = to_add.iter().map(|e| e.size_bytes).sum();
     let device_free_bytes = available_bytes(device_music_path)?;
 
-    Ok(SyncPreview { to_add, to_delete, device_free_bytes, required_bytes })
+    Ok(SyncPreview { to_add, to_delete, device_free_bytes, required_bytes, device_mount_path })
 }
 
 /// Performs the sync using a preview already computed by the caller.
@@ -108,6 +109,29 @@ pub fn perform_sync(
     let mut copied = 0usize;
     let mut deleted = 0usize;
 
+    // Delete orphaned files before copying additions so that a nearly-full
+    // device frees space before new files arrive.
+    for entry in &to_delete {
+        if cancel.load(Ordering::Relaxed) {
+            return Ok(SyncResult { copied, deleted, cancelled: true });
+        }
+
+        let target = device_music_path.join(&entry.relative_path);
+        if target.exists() {
+            std::fs::remove_file(&target)?;
+            deleted += 1;
+        }
+
+        current += 1;
+        let _ = app_handle.emit(SYNC_PROGRESS_EVENT, SyncProgress {
+            current,
+            total,
+            current_file: format!("{} — {}", entry.artist, entry.title),
+            phase: "deleting".to_string(),
+            completed_relative_path: entry.relative_path.clone(),
+        });
+    }
+
     for entry in &preview.to_add {
         if cancel.load(Ordering::Relaxed) {
             return Ok(SyncResult { copied, deleted, cancelled: true });
@@ -116,6 +140,13 @@ pub fn perform_sync(
         let source = find_in_library_roots(&entry.relative_path, &roots);
         let Some(source) = source else {
             current += 1;
+            let _ = app_handle.emit(SYNC_PROGRESS_EVENT, SyncProgress {
+                current,
+                total,
+                current_file: format!("{} — {}", entry.artist, entry.title),
+                phase: "copying".to_string(),
+                completed_relative_path: entry.relative_path.clone(),
+            });
             continue;
         };
 
@@ -131,27 +162,6 @@ pub fn perform_sync(
             total,
             current_file: format!("{} — {}", entry.artist, entry.title),
             phase: "copying".to_string(),
-            completed_relative_path: entry.relative_path.clone(),
-        });
-    }
-
-    for entry in &to_delete {
-        if cancel.load(Ordering::Relaxed) {
-            return Ok(SyncResult { copied, deleted, cancelled: true });
-        }
-
-        let target = device_music_path.join(&entry.relative_path);
-        if target.exists() {
-            std::fs::remove_file(&target)?;
-        }
-
-        deleted += 1;
-        current += 1;
-        let _ = app_handle.emit(SYNC_PROGRESS_EVENT, SyncProgress {
-            current,
-            total,
-            current_file: format!("{} — {}", entry.artist, entry.title),
-            phase: "deleting".to_string(),
             completed_relative_path: entry.relative_path.clone(),
         });
     }
@@ -284,11 +294,13 @@ fn parse_display_info(relative_path: &str) -> (String, String, String) {
     (artist, album, title)
 }
 
-/// Copies `source` to `destination` using a strategy appropriate for the device
-/// kind. MTP via gvfs-fuse requires `io::copy` (plain read/write loop) because
-/// `std::fs::copy` uses `copy_file_range` which gvfs-fuse rejects with EOPNOTSUPP,
-/// and retries with backoff because MTP sessions can go stale mid-transfer.
-/// USB storage supports `std::fs::copy` directly and rarely needs retries.
+/// Copies `source` to `destination` using a plain `io::copy` loop (not
+/// `std::fs::copy`) for both device kinds. `std::fs::copy` uses the
+/// `copy_file_range` syscall, which any FUSE-backed filesystem — gvfs-fuse for
+/// MTP and fuse-exfat/fuse-ntfs for USB drives — may reject with EOPNOTSUPP.
+/// MTP additionally gets retries with backoff because gvfs/libmtp sessions can
+/// go stale mid-transfer; USB storage retries are unnecessary but the retry
+/// count is set per kind so the distinction is explicit.
 fn copy_to_device(source: &Path, destination: &Path, device_kind: &DeviceKind) -> Result<(), AppError> {
     if let Some(parent) = destination.parent() {
         std::fs::create_dir_all(parent)?;
@@ -305,21 +317,18 @@ fn copy_to_device(source: &Path, destination: &Path, device_kind: &DeviceKind) -
             let _ = std::fs::remove_file(destination);
             std::thread::sleep(COPY_RETRY_DELAY);
         }
-        let result = match device_kind {
-            DeviceKind::Mtp => (|| -> Result<(), std::io::Error> {
-                let mut source_file = std::fs::File::open(source)?;
-                let mut destination_file = std::fs::File::create(destination)?;
-                std::io::copy(&mut source_file, &mut destination_file)?;
-                Ok(())
-            })(),
-            DeviceKind::UsbStorage => std::fs::copy(source, destination).map(|_| ()),
-        };
+        let result = (|| -> Result<(), std::io::Error> {
+            let mut source_file = std::fs::File::open(source)?;
+            let mut destination_file = std::fs::File::create(destination)?;
+            std::io::copy(&mut source_file, &mut destination_file)?;
+            Ok(())
+        })();
         match result {
             Ok(()) => return Ok(()),
             Err(error) => last_error = Some(error),
         }
     }
-    Err(AppError::Io(last_error.unwrap()))
+    Err(AppError::Io(last_error.expect("loop body always runs at least once")))
 }
 
 /// Searches each library root for a file at `relative_path`, returning the

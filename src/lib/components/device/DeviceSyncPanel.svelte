@@ -77,17 +77,23 @@
 
   async function runPreview() {
     if (!selectedFolder) return;
+    // Capture the folder before any awaits. If the user switches folders or
+    // triggers a rescan while the preview is in flight, the stale result is
+    // discarded rather than overwriting whatever is now selected.
+    const capturedFolder = selectedFolder;
     preview = null;
     errorMessage = null;
     successMessage = null;
     try {
-      await commands.deviceSaveMusicSubfolder(selectedFolder);
-      const result = await device.performPreview(selectedFolder);
-      if (result !== null) {
+      await commands.deviceSaveMusicSubfolder(capturedFolder);
+      const result = await device.performPreview(capturedFolder);
+      if (result !== null && selectedFolder === capturedFolder) {
         preview = result;
       }
     } catch (error) {
-      errorMessage = String(error);
+      if (selectedFolder === capturedFolder) {
+        errorMessage = String(error);
+      }
     }
   }
 
@@ -252,7 +258,13 @@
 
   <div class="action-bar">
     {#if device.syncRunning}
-      <div class="action-bar-progress">
+      <div
+        class="action-bar-progress"
+        role="progressbar"
+        aria-label="Sync progress"
+        aria-valuenow={device.syncProgress?.current ?? 0}
+        aria-valuemax={device.syncProgress?.total ?? 0}
+      >
         <p class="progress-label">
           {#if device.syncProgress}
             Syncing… {device.syncProgress.current} / {device.syncProgress.total} files
@@ -281,11 +293,11 @@
         {/if}
         {#if preview}
           {#if preview.to_add.length > 0 && preview.to_delete.length === 0}
-            <button class="primary" onclick={() => runSync("additions_only")} disabled={device.syncRunning}>
+            <button class="primary" onclick={() => runSync("additions_only")} disabled={device.syncRunning || notEnoughSpace()}>
               Add Music
             </button>
           {:else if preview.to_add.length > 0 && preview.to_delete.length > 0}
-            <button class="primary" onclick={() => runSync("additions_only")} disabled={device.syncRunning}>
+            <button class="primary" onclick={() => runSync("additions_only")} disabled={device.syncRunning || notEnoughSpace()}>
               Add Missing Only
             </button>
             <button class="destructive" onclick={() => runSync("all")} disabled={device.syncRunning}>

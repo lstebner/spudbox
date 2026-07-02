@@ -115,11 +115,6 @@ pub fn find_music_folders(mount_path: &Path) -> Vec<String> {
             }
         }
 
-        // Found qualifying folders at this depth — no need to descend further.
-        if !results.is_empty() {
-            return results;
-        }
-
         current_level = next_level;
     }
 

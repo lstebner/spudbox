@@ -19,4 +19,7 @@ pub struct AppState {
     /// Set to `true` to request that a running preview scan stop.
     /// Cleared to `false` at the start of every new preview.
     pub device_preview_cancel: Arc<AtomicBool>,
+    /// Set to `true` for the duration of a preview scan. Checked atomically
+    /// before starting a new preview so concurrent calls are rejected immediately.
+    pub device_preview_running: Arc<AtomicBool>,
 }

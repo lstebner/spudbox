@@ -51,6 +51,9 @@ pub struct SyncPreview {
     pub device_free_bytes: u64,
     /// Total bytes of all files in `to_add`.
     pub required_bytes: u64,
+    /// Absolute mount path at the time the preview was computed. Checked at
+    /// sync time to detect a device swap between preview and sync.
+    pub device_mount_path: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

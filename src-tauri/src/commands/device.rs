@@ -1,3 +1,4 @@
+use std::panic::AssertUnwindSafe;
 use std::sync::atomic::Ordering;
 
 use tauri::{AppHandle, Emitter, State};
@@ -9,26 +10,32 @@ use crate::state::AppState;
 
 const SETTING_DEVICE_MUSIC_SUBFOLDER: &str = "device_music_subfolder";
 
-/// Returns the current device connection state. Checks the gvfs mount
-/// directory synchronously so the result is always up-to-date on first load.
+/// Returns the current device connection state. Runs in a blocking task so
+/// that the gvfs `read_dir` calls do not execute on the main GTK/webview thread,
+/// which would freeze the window while waiting for a sleeping MTP device.
 #[tauri::command]
-pub fn device_get_status(state: State<AppState>) -> Result<DeviceStatus, AppError> {
-    match detection::find_device_mount() {
-        Some(mount) => {
-            let conn = state.db.get()?;
-            let saved_subfolder = settings::get(&conn, SETTING_DEVICE_MUSIC_SUBFOLDER)?;
-            let detected_music_subfolder = saved_subfolder
-                .or_else(|| detection::find_music_folders(&mount.mount_path).into_iter().next());
-            Ok(DeviceStatus {
-                connected: true,
-                kind: mount.kind,
-                device_name: mount.device_name,
-                mount_path: mount.mount_path.to_string_lossy().into_owned(),
-                detected_music_subfolder,
-            })
+pub async fn device_get_status(state: State<'_, AppState>) -> Result<DeviceStatus, AppError> {
+    let db = state.db.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        match detection::find_device_mount() {
+            Some(mount) => {
+                let conn = db.get()?;
+                let saved_subfolder = settings::get(&conn, SETTING_DEVICE_MUSIC_SUBFOLDER)?;
+                let detected_music_subfolder = saved_subfolder
+                    .or_else(|| detection::find_music_folders(&mount.mount_path).into_iter().next());
+                Ok(DeviceStatus {
+                    connected: true,
+                    kind: mount.kind,
+                    device_name: mount.device_name,
+                    mount_path: mount.mount_path.to_string_lossy().into_owned(),
+                    detected_music_subfolder,
+                })
+            }
+            None => Ok(DeviceStatus::disconnected()),
         }
-        None => Ok(DeviceStatus::disconnected()),
-    }
+    })
+    .await
+    .unwrap_or_else(|_| Err(AppError::Device("device status check failed".to_string())))
 }
 
 /// Walks the device and returns all subfolder paths (relative to the mount
@@ -63,7 +70,7 @@ pub async fn device_find_music_folders(
         Ok(folders)
     })
     .await
-    .expect("folder scan task panicked")
+    .unwrap_or_else(|_| Err(AppError::Device("folder scan task failed".to_string())))
 }
 
 /// Persists the user's chosen music subfolder path (relative to the device
@@ -80,23 +87,39 @@ pub fn device_save_music_subfolder(
 /// Compares the library against the device music folder and returns the
 /// list of files to add and remove. Returns `AppError::Cancelled` if
 /// `device_cancel_preview` is called while the device walk is in progress.
+/// Returns an error immediately if a preview is already running.
 #[tauri::command]
 pub async fn device_preview_sync(
     state: State<'_, AppState>,
     app: AppHandle,
     music_subfolder: String,
 ) -> Result<SyncPreview, AppError> {
+    let preview_running = state.device_preview_running.clone();
+    if preview_running
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return Err(AppError::Device("a preview is already in progress".to_string()));
+    }
     let cancel = state.device_preview_cancel.clone();
     cancel.store(false, Ordering::SeqCst);
     let db = state.db.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let mount = detection::find_device_mount()
-            .ok_or_else(|| AppError::Device("no device connected".to_string()))?;
-        let device_music_path = mount.mount_path.join(&music_subfolder);
-        sync::preview_sync(&device_music_path, &db, &app, &cancel)
+
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let mount = detection::find_device_mount()
+                .ok_or_else(|| AppError::Device("no device connected".to_string()))?;
+            let device_music_path = mount.mount_path.join(&music_subfolder);
+            let mount_path = mount.mount_path.to_string_lossy().into_owned();
+            sync::preview_sync(&device_music_path, mount_path, &db, &app, &cancel)
+        }))
+        .unwrap_or_else(|_| Err(AppError::Device("preview task panicked".to_string())))
     })
     .await
-    .expect("preview task panicked")
+    .unwrap_or_else(|_| Err(AppError::Device("preview task failed to complete".to_string())));
+
+    preview_running.store(false, Ordering::SeqCst);
+    result
 }
 
 /// Signals a running preview scan to stop at the next file boundary.
@@ -106,10 +129,10 @@ pub fn device_cancel_preview(state: State<AppState>) {
     state.device_preview_cancel.store(true, Ordering::SeqCst);
 }
 
-/// Performs the sync (copy additions, and optionally delete removed tracks).
-/// Performs the sync using the preview already computed by the caller, so the
-/// slow device walk does not repeat. Emits `device-sync-started` when the guard
-/// passes, `device-sync-ended` when done (success, failure, or cancellation),
+/// Performs the sync (copy additions, and optionally delete removed tracks)
+/// using the preview already computed by the caller, so the slow device walk
+/// does not repeat. Emits `device-sync-started` when the guard passes,
+/// `device-sync-ended` when done (success, failure, cancellation, or panic),
 /// and `device-sync-progress` throughout. Returns an error immediately if a
 /// sync is already running. Resets the cancel flag at the start of every run.
 #[tauri::command]
@@ -132,18 +155,29 @@ pub async fn device_perform_sync(
     cancel.store(false, Ordering::SeqCst);
     let db = state.db.clone();
     let app_for_sync = app.clone();
+
+    // `catch_unwind` ensures the closure never panics out, so `.await` always
+    // resolves to `Ok` and `sync_running` / `device-sync-ended` are guaranteed
+    // to fire even if the sync body panics.
     let result = tauri::async_runtime::spawn_blocking(move || {
-        let outcome = (|| {
+        std::panic::catch_unwind(AssertUnwindSafe(|| {
             let mount = detection::find_device_mount()
                 .ok_or_else(|| AppError::Device("no device connected".to_string()))?;
+            if mount.mount_path.to_string_lossy() != preview.device_mount_path {
+                return Err(AppError::Device(
+                    "connected device changed since preview — re-run preview before syncing"
+                        .to_string(),
+                ));
+            }
             let device_music_path = mount.mount_path.join(&music_subfolder);
             sync::perform_sync(device_music_path, mount.kind, mode, preview, db, app_for_sync, cancel)
-        })();
-        sync_running.store(false, Ordering::SeqCst);
-        outcome
+        }))
+        .unwrap_or_else(|_| Err(AppError::Device("sync task panicked".to_string())))
     })
     .await
-    .expect("sync task panicked");
+    .unwrap_or_else(|_| Err(AppError::Device("sync task failed to complete".to_string())));
+
+    sync_running.store(false, Ordering::SeqCst);
     let _ = app.emit("device-sync-ended", ());
     result
 }

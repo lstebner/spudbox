@@ -102,6 +102,7 @@ export type DeviceSyncPreview = {
   to_delete: SyncEntry[];
   device_free_bytes: number;
   required_bytes: number;
+  device_mount_path: string;
 };
 
 export type DevicePreviewProgress = {

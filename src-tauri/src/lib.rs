@@ -65,6 +65,7 @@ pub fn run() {
                 device_sync_running: Arc::new(AtomicBool::new(false)),
                 device_sync_cancel: Arc::new(AtomicBool::new(false)),
                 device_preview_cancel: Arc::new(AtomicBool::new(false)),
+                device_preview_running: Arc::new(AtomicBool::new(false)),
             });
             tray::setup_tray(app)?;
             device::detection::start_detection_loop(app.handle().clone());

@@ -55,8 +55,11 @@ function createDeviceStore() {
           commands.deviceCancelPreview();
           commands.deviceCancelSync();
           ui.closeDeviceSync();
-          previewRunning = false;
-          syncRunning = false;
+          // previewRunning is reset by performPreview's finally block once the
+          // cancelled command resolves. syncRunning is reset by the device-sync-ended
+          // event, which Rust always emits (even on panic) after the cancel propagates
+          // through the retry loop — resetting it here would create a window where the
+          // frontend shows idle while the backend is still in a retry sleep.
           syncProgress = null;
           completedPaths.clear();
         }
@@ -91,7 +94,15 @@ function createDeviceStore() {
       syncRunning = true;
       syncProgress = null;
       previewProgressCount = 0;
-      return commands.devicePerformSync(subfolder, mode, preview);
+      try {
+        return await commands.devicePerformSync(subfolder, mode, preview);
+      } catch (error) {
+        // Belt-and-suspenders: Rust guarantees device-sync-ended via catch_unwind,
+        // but if the IPC call itself fails (e.g. deserialization error) the event
+        // may not arrive. Reset syncRunning here so the UI can recover.
+        syncRunning = false;
+        throw error;
+      }
     },
 
     async cancelSync(): Promise<void> {
