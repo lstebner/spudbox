@@ -14,6 +14,8 @@ pub enum AppError {
     Tauri(#[from] tauri::Error),
     #[error("device error: {0}")]
     Device(String),
+    #[error("cancelled")]
+    Cancelled,
 }
 
 impl Serialize for AppError {

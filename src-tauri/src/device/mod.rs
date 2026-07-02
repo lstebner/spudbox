@@ -26,7 +26,7 @@ impl DeviceStatus {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncEntry {
     pub relative_path: String,
     pub size_bytes: u64,
@@ -35,7 +35,7 @@ pub struct SyncEntry {
     pub title: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SyncPreview {
     pub to_add: Vec<SyncEntry>,
     pub to_delete: Vec<SyncEntry>,
@@ -56,6 +56,13 @@ pub struct SyncProgress {
     pub total: usize,
     pub current_file: String,
     pub phase: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SyncResult {
+    pub copied: usize,
+    pub deleted: usize,
+    pub cancelled: bool,
 }
 
 #[derive(Debug, Deserialize)]

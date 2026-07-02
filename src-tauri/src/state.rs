@@ -16,4 +16,7 @@ pub struct AppState {
     /// Set to `true` to request that the running sync stop between file
     /// operations. Cleared to `false` at the start of every new sync.
     pub device_sync_cancel: Arc<AtomicBool>,
+    /// Set to `true` to request that a running preview scan stop.
+    /// Cleared to `false` at the start of every new preview.
+    pub device_preview_cancel: Arc<AtomicBool>,
 }

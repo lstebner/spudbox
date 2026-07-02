@@ -10,7 +10,7 @@ use crate::db::queries::{scan_roots, tracks};
 use crate::error::AppError;
 use crate::state::DbPool;
 
-use super::{SyncEntry, SyncMode, SyncPreview, SyncPreviewProgress, SyncProgress};
+use super::{SyncEntry, SyncMode, SyncPreview, SyncPreviewProgress, SyncProgress, SyncResult};
 
 const PREVIEW_PROGRESS_EVENT: &str = "device-preview-progress";
 const SYNC_PROGRESS_EVENT: &str = "device-sync-progress";
@@ -23,17 +23,19 @@ const AUDIO_EXTENSIONS: &[&str] = &["flac", "mp3", "aac", "m4a", "wav", "ogg", "
 /// Computes what would change if the library were synced to `device_music_path`:
 /// files to copy from the library and files to remove from the device.
 /// Emits `device-preview-progress` events while walking the device filesystem.
+/// Returns `AppError::Cancelled` immediately if `cancel` is set mid-walk.
 pub fn preview_sync(
     device_music_path: &Path,
     db: &DbPool,
     app_handle: &AppHandle,
+    cancel: &Arc<AtomicBool>,
 ) -> Result<SyncPreview, AppError> {
     let conn = db.get()?;
     let roots = scan_roots::list_enabled(&conn)?;
     let library_tracks = tracks::active_paths_with_sizes(&conn)?;
 
     let library_map = build_library_map(&library_tracks, &roots);
-    let device_map = walk_device(device_music_path, app_handle)?;
+    let device_map = walk_device(device_music_path, app_handle, cancel)?;
 
     let mut to_add: Vec<SyncEntry> = library_map
         .iter()
@@ -72,19 +74,20 @@ pub fn preview_sync(
     Ok(SyncPreview { to_add, to_delete, device_free_bytes, required_bytes })
 }
 
-/// Performs the sync: copies additions to the device and, when `mode` is
-/// `All`, also removes device files that are no longer in the library.
+/// Performs the sync using a preview already computed by the caller.
+/// Copies additions to the device and, when `mode` is `All`, also removes
+/// device files that are no longer in the library.
 /// Emits `device-sync-progress` events throughout. Checks `cancel` between
 /// every file operation; when set the sync stops cleanly without partial writes.
+/// Returns actual counts of files copied/deleted and whether the sync was cancelled.
 pub fn perform_sync(
     device_music_path: PathBuf,
     mode: SyncMode,
+    preview: SyncPreview,
     db: DbPool,
     app_handle: AppHandle,
     cancel: Arc<AtomicBool>,
-) -> Result<(), AppError> {
-    let preview = preview_sync(&device_music_path, &db, &app_handle)?;
-
+) -> Result<SyncResult, AppError> {
     let conn = db.get()?;
     let roots = scan_roots::list_enabled(&conn)?;
     drop(conn);
@@ -92,10 +95,12 @@ pub fn perform_sync(
     let to_delete = if matches!(mode, SyncMode::All) { preview.to_delete } else { Vec::new() };
     let total = preview.to_add.len() + to_delete.len();
     let mut current = 0;
+    let mut copied = 0usize;
+    let mut deleted = 0usize;
 
     for entry in &preview.to_add {
         if cancel.load(Ordering::Relaxed) {
-            return Ok(());
+            return Ok(SyncResult { copied, deleted, cancelled: true });
         }
 
         let source = find_in_library_roots(&entry.relative_path, &roots);
@@ -108,8 +113,13 @@ pub fn perform_sync(
         if let Some(parent) = destination.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::copy(&source, &destination)?;
+        // std::fs::copy uses copy_file_range on Linux, which gvfs-fuse returns
+        // EOPNOTSUPP (os error 95) for. Read/write via io::copy works correctly.
+        let mut source_file = std::fs::File::open(&source)?;
+        let mut destination_file = std::fs::File::create(&destination)?;
+        std::io::copy(&mut source_file, &mut destination_file)?;
 
+        copied += 1;
         current += 1;
         let _ = app_handle.emit(SYNC_PROGRESS_EVENT, SyncProgress {
             current,
@@ -121,7 +131,7 @@ pub fn perform_sync(
 
     for entry in &to_delete {
         if cancel.load(Ordering::Relaxed) {
-            return Ok(());
+            return Ok(SyncResult { copied, deleted, cancelled: true });
         }
 
         let target = device_music_path.join(&entry.relative_path);
@@ -129,6 +139,7 @@ pub fn perform_sync(
             std::fs::remove_file(&target)?;
         }
 
+        deleted += 1;
         current += 1;
         let _ = app_handle.emit(SYNC_PROGRESS_EVENT, SyncProgress {
             current,
@@ -138,7 +149,7 @@ pub fn perform_sync(
         });
     }
 
-    Ok(())
+    Ok(SyncResult { copied, deleted, cancelled: false })
 }
 
 struct LibraryEntry {
@@ -179,15 +190,20 @@ fn build_library_map(
 /// every audio file found. Returns an empty map if the path does not exist yet.
 /// Emits `device-preview-progress` every `PREVIEW_PROGRESS_INTERVAL` files so
 /// the frontend can show a running count while the MTP traversal is in progress.
+/// Returns `AppError::Cancelled` immediately when `cancel` is set.
 fn walk_device(
     device_music_path: &Path,
     app_handle: &AppHandle,
+    cancel: &Arc<AtomicBool>,
 ) -> Result<HashMap<String, u64>, AppError> {
     if !device_music_path.exists() {
         return Ok(HashMap::new());
     }
     let mut map = HashMap::new();
     for entry in WalkDir::new(device_music_path).into_iter().flatten() {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(AppError::Cancelled);
+        }
         if !entry.file_type().is_file() {
             continue;
         }

@@ -17,3 +17,9 @@ export const onDevicePreviewProgress = (cb: (payload: DevicePreviewProgress) => 
 
 export const onDeviceSyncProgress = (cb: (payload: DeviceSyncProgress) => void) =>
   listen<DeviceSyncProgress>("device-sync-progress", (event) => cb(event.payload));
+
+export const onDeviceSyncStarted = (cb: () => void) =>
+  listen("device-sync-started", () => cb());
+
+export const onDeviceSyncEnded = (cb: () => void) =>
+  listen("device-sync-ended", () => cb());

@@ -64,6 +64,7 @@ pub fn run() {
                 player,
                 device_sync_running: Arc::new(AtomicBool::new(false)),
                 device_sync_cancel: Arc::new(AtomicBool::new(false)),
+                device_preview_cancel: Arc::new(AtomicBool::new(false)),
             });
             tray::setup_tray(app)?;
             device::detection::start_detection_loop(app.handle().clone());
@@ -99,7 +100,8 @@ pub fn run() {
             commands::device::device_save_music_subfolder,
             commands::device::device_preview_sync,
             commands::device::device_perform_sync,
-            commands::device::device_cancel_sync
+            commands::device::device_cancel_sync,
+            commands::device::device_cancel_preview
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,17 +1,31 @@
 <script lang="ts">
   import { X, HardDrive, RefreshCw } from "@lucide/svelte";
+  import { confirm } from "@tauri-apps/plugin-dialog";
   import { commands } from "$lib/api/commands";
-  import { onDevicePreviewProgress, onDeviceSyncProgress } from "$lib/api/events";
   import { device } from "$lib/stores/device.svelte";
-  import type { DeviceSyncPreview, DeviceSyncProgress } from "$lib/types";
+  import type { DeviceSyncPreview } from "$lib/types";
 
   let { onclose }: { onclose: () => void } = $props();
 
   async function handleClose() {
-    if (syncing) {
-      const confirmed = confirm("A sync is in progress. Close anyway and cancel it?");
+    if (device.syncRunning) {
+      const confirmed = await confirm("A sync is in progress — stop it and close?", {
+        title: "Stop sync?",
+        kind: "warning",
+        okLabel: "Stop & close",
+        cancelLabel: "Keep syncing",
+      });
       if (!confirmed) return;
-      await commands.deviceCancelSync();
+      await device.cancelSync();
+    } else if (device.previewRunning) {
+      const confirmed = await confirm("A preview scan is in progress — stop it and close?", {
+        title: "Stop preview?",
+        kind: "warning",
+        okLabel: "Stop & close",
+        cancelLabel: "Keep scanning",
+      });
+      if (!confirmed) return;
+      await device.cancelPreview();
     }
     onclose();
   }
@@ -23,10 +37,6 @@
   let selectedFolder = $state(device.detectedMusicSubfolder ?? "");
 
   let preview = $state<DeviceSyncPreview | null>(null);
-  let previewing = $state(false);
-  let previewTracksFound = $state(0);
-  let syncing = $state(false);
-  let progress = $state<DeviceSyncProgress | null>(null);
   let errorMessage = $state<string | null>(null);
   let successMessage = $state<string | null>(null);
 
@@ -67,50 +77,40 @@
 
   async function runPreview() {
     if (!selectedFolder) return;
-    previewing = true;
-    previewTracksFound = 0;
     preview = null;
     errorMessage = null;
     successMessage = null;
-    const unlisten = await onDevicePreviewProgress((payload) => {
-      previewTracksFound = payload.device_tracks_found;
-    });
     try {
       await commands.deviceSaveMusicSubfolder(selectedFolder);
-      preview = await commands.devicePreviewSync(selectedFolder);
+      const result = await device.performPreview(selectedFolder);
+      if (result !== null) {
+        preview = result;
+      }
     } catch (error) {
       errorMessage = String(error);
-    } finally {
-      previewing = false;
-      unlisten();
     }
   }
 
   async function runSync(mode: "additions_only" | "all") {
     if (!preview || !selectedFolder) return;
-    syncing = true;
-    progress = null;
+    const snapshotPreview = preview;
     errorMessage = null;
     successMessage = null;
-
-    const unlisten = await onDeviceSyncProgress((payload) => {
-      progress = payload;
-    });
-
     try {
-      await commands.devicePerformSync(selectedFolder, mode);
-      const added = preview.to_add.length;
-      const deleted = mode === "all" ? preview.to_delete.length : 0;
-      successMessage =
-        `Sync complete — ${added} file${added !== 1 ? "s" : ""} copied` +
-        (deleted > 0 ? `, ${deleted} removed` : "") + ".";
-      preview = null;
-      progress = null;
+      const result = await device.performSync(selectedFolder, mode, snapshotPreview);
+      if (result.cancelled) {
+        const planned = snapshotPreview.to_add.length + (mode === "all" ? snapshotPreview.to_delete.length : 0);
+        successMessage =
+          `Sync cancelled — ${result.copied} of ${planned} file${planned !== 1 ? "s" : ""} copied` +
+          (result.deleted > 0 ? `, ${result.deleted} removed` : "") + ".";
+      } else {
+        successMessage =
+          `Sync complete — ${result.copied} file${result.copied !== 1 ? "s" : ""} copied` +
+          (result.deleted > 0 ? `, ${result.deleted} removed` : "") + ".";
+        preview = null;
+      }
     } catch (error) {
       errorMessage = String(error);
-    } finally {
-      syncing = false;
-      unlisten();
     }
   }
 </script>
@@ -237,28 +237,21 @@
   </div>
 
   <div class="action-bar">
-    {#if syncing && progress}
+    {#if device.syncRunning}
       <div class="action-bar-progress">
-        <div
-          class="progress-bar-track"
-          role="progressbar"
-          aria-valuenow={progress.current}
-          aria-valuemin={0}
-          aria-valuemax={progress.total}
-        >
-          <div
-            class="progress-bar-fill"
-            style="width: {progress.total > 0 ? (progress.current / progress.total) * 100 : 0}%"
-          ></div>
-        </div>
         <p class="progress-label">
-          {progress.current} / {progress.total} — {progress.current_file}
+          {#if device.syncProgress}
+            Syncing… {device.syncProgress.current} / {device.syncProgress.total} files
+          {:else}
+            Scanning device…{device.previewProgressCount > 0 ? ` ${device.previewProgressCount} tracks found` : ""}
+          {/if}
         </p>
+        <button class="ghost" onclick={() => device.cancelSync()}>Cancel</button>
       </div>
-    {:else if previewing}
+    {:else if device.previewRunning}
       <div class="action-bar-progress">
         <p class="progress-label">
-          Scanning device…{previewTracksFound > 0 ? ` ${previewTracksFound} tracks found` : ""}
+          Scanning device…{device.previewProgressCount > 0 ? ` ${device.previewProgressCount} tracks found` : ""}
         </p>
       </div>
     {:else}
@@ -267,25 +260,25 @@
           <button
             class={preview ? "ghost" : "primary"}
             onclick={runPreview}
-            disabled={!selectedFolder}
+            disabled={!selectedFolder || device.previewRunning || device.syncRunning}
           >
             {preview ? "Refresh preview" : "Preview Sync"}
           </button>
         {/if}
         {#if preview}
           {#if preview.to_add.length > 0 && preview.to_delete.length === 0}
-            <button class="primary" onclick={() => runSync("additions_only")}>
+            <button class="primary" onclick={() => runSync("additions_only")} disabled={device.syncRunning}>
               Add Music
             </button>
           {:else if preview.to_add.length > 0 && preview.to_delete.length > 0}
-            <button class="primary" onclick={() => runSync("additions_only")}>
+            <button class="primary" onclick={() => runSync("additions_only")} disabled={device.syncRunning}>
               Add Missing Only
             </button>
-            <button class="destructive" onclick={() => runSync("all")}>
+            <button class="destructive" onclick={() => runSync("all")} disabled={device.syncRunning}>
               Sync All
             </button>
           {:else if preview.to_delete.length > 0}
-            <button class="destructive" onclick={() => runSync("all")}>
+            <button class="destructive" onclick={() => runSync("all")} disabled={device.syncRunning}>
               Sync All
             </button>
           {/if}
@@ -336,11 +329,12 @@
 
   .action-bar-progress {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
-    gap: 4px;
+    gap: 1em;
     width: 100%;
     max-width: 480px;
+    justify-content: center;
   }
 
   section {
@@ -616,21 +610,6 @@
 
   .message.error { color: #e07070; }
   .message.success { color: #6fcf6f; }
-
-  .progress-bar-track {
-    height: 6px;
-    background: var(--bg-hover);
-    border-radius: 3px;
-    overflow: hidden;
-    border: 1px solid var(--border);
-  }
-
-  .progress-bar-fill {
-    height: 100%;
-    background: var(--accent);
-    border-radius: 3px;
-    transition: width 0.1s linear;
-  }
 
   .progress-label {
     margin: 0;

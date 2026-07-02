@@ -1,9 +1,9 @@
 use std::sync::atomic::Ordering;
 
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 
 use crate::db::queries::settings;
-use crate::device::{detection, sync, DeviceStatus, SyncMode, SyncPreview};
+use crate::device::{detection, sync, DeviceStatus, SyncMode, SyncPreview, SyncResult};
 use crate::error::AppError;
 use crate::state::AppState;
 
@@ -77,36 +77,48 @@ pub fn device_save_music_subfolder(
 }
 
 /// Compares the library against the device music folder and returns the
-/// list of files to add and remove.
+/// list of files to add and remove. Returns `AppError::Cancelled` if
+/// `device_cancel_preview` is called while the device walk is in progress.
 #[tauri::command]
 pub async fn device_preview_sync(
     state: State<'_, AppState>,
     app: AppHandle,
     music_subfolder: String,
 ) -> Result<SyncPreview, AppError> {
+    let cancel = state.device_preview_cancel.clone();
+    cancel.store(false, Ordering::SeqCst);
     let db = state.db.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let mount = detection::find_mtp_mount()
             .ok_or_else(|| AppError::Device("no MTP device connected".to_string()))?;
         let device_music_path = mount.mount_path.join(&music_subfolder);
-        sync::preview_sync(&device_music_path, &db, &app)
+        sync::preview_sync(&device_music_path, &db, &app, &cancel)
     })
     .await
     .expect("preview task panicked")
 }
 
+/// Signals a running preview scan to stop at the next file boundary.
+/// No-op if no preview is in progress.
+#[tauri::command]
+pub fn device_cancel_preview(state: State<AppState>) {
+    state.device_preview_cancel.store(true, Ordering::SeqCst);
+}
+
 /// Performs the sync (copy additions, and optionally delete removed tracks).
-/// Emits `device-sync-progress` events throughout. Returns an error immediately
-/// if a sync is already running so two syncs can never execute concurrently.
-/// Resets the cancel flag at the start of every sync so a prior cancel signal
-/// doesn't affect a freshly started run.
+/// Performs the sync using the preview already computed by the caller, so the
+/// slow device walk does not repeat. Emits `device-sync-started` when the guard
+/// passes, `device-sync-ended` when done (success, failure, or cancellation),
+/// and `device-sync-progress` throughout. Returns an error immediately if a
+/// sync is already running. Resets the cancel flag at the start of every run.
 #[tauri::command]
 pub async fn device_perform_sync(
     state: State<'_, AppState>,
     app: AppHandle,
     music_subfolder: String,
     mode: SyncMode,
-) -> Result<(), AppError> {
+    preview: SyncPreview,
+) -> Result<SyncResult, AppError> {
     let sync_running = state.device_sync_running.clone();
     if sync_running
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -114,21 +126,25 @@ pub async fn device_perform_sync(
     {
         return Err(AppError::Device("a sync is already in progress".to_string()));
     }
+    let _ = app.emit("device-sync-started", ());
     let cancel = state.device_sync_cancel.clone();
     cancel.store(false, Ordering::SeqCst);
     let db = state.db.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let result = (|| {
+    let app_for_sync = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let outcome = (|| {
             let mount = detection::find_mtp_mount()
                 .ok_or_else(|| AppError::Device("no MTP device connected".to_string()))?;
             let device_music_path = mount.mount_path.join(&music_subfolder);
-            sync::perform_sync(device_music_path, mode, db, app, cancel)
+            sync::perform_sync(device_music_path, mode, preview, db, app_for_sync, cancel)
         })();
         sync_running.store(false, Ordering::SeqCst);
-        result
+        outcome
     })
     .await
-    .expect("sync task panicked")
+    .expect("sync task panicked");
+    let _ = app.emit("device-sync-ended", ());
+    result
 }
 
 /// Signals a running sync to stop cleanly between file operations.

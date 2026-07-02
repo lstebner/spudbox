@@ -113,3 +113,9 @@ export type DeviceSyncProgress = {
 };
 
 export type DeviceSyncMode = "additions_only" | "all";
+
+export type DeviceSyncResult = {
+  copied: number;
+  deleted: number;
+  cancelled: boolean;
+};

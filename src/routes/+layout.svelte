@@ -1,5 +1,6 @@
 <script lang="ts">
   import "$lib/styles/theme.css";
+  import { confirm } from "@tauri-apps/plugin-dialog";
   import { HardDrive, Settings } from "@lucide/svelte";
   import { untrack } from "svelte";
   import ArtistList from "$lib/components/sidebar/ArtistList.svelte";
@@ -57,7 +58,32 @@
           <button
             class="cog"
             class:active={ui.showDeviceSync}
-            onclick={() => (ui.showDeviceSync ? ui.closeDeviceSync() : ui.openDeviceSync())}
+            onclick={async () => {
+              if (ui.showDeviceSync) {
+                if (device.syncRunning) {
+                  const confirmed = await confirm("A sync is in progress — stop it and close?", {
+                    title: "Stop sync?",
+                    kind: "warning",
+                    okLabel: "Stop & close",
+                    cancelLabel: "Keep syncing",
+                  });
+                  if (!confirmed) return;
+                  await device.cancelSync();
+                } else if (device.previewRunning) {
+                  const confirmed = await confirm("A preview scan is in progress — stop it and close?", {
+                    title: "Stop preview?",
+                    kind: "warning",
+                    okLabel: "Stop & close",
+                    cancelLabel: "Keep scanning",
+                  });
+                  if (!confirmed) return;
+                  await device.cancelPreview();
+                }
+                ui.closeDeviceSync();
+              } else {
+                ui.openDeviceSync();
+              }
+            }}
             aria-label="Device sync"
           >
             <HardDrive size={20} />
