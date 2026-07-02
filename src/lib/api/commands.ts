@@ -44,4 +44,5 @@ export const commands = {
     invoke<DeviceSyncPreview>("device_preview_sync", { musicSubfolder }),
   devicePerformSync: (musicSubfolder: string, mode: DeviceSyncMode) =>
     invoke<void>("device_perform_sync", { musicSubfolder, mode }),
+  deviceCancelSync: () => invoke<void>("device_cancel_sync"),
 };

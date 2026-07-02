@@ -7,6 +7,15 @@
 
   let { onclose }: { onclose: () => void } = $props();
 
+  async function handleClose() {
+    if (syncing) {
+      const confirmed = confirm("A sync is in progress. Close anyway and cancel it?");
+      if (!confirmed) return;
+      await commands.deviceCancelSync();
+    }
+    onclose();
+  }
+
   // "scanning" → "found" → "none" (no candidates at all)
   type FolderScanState = "scanning" | "found" | "none";
   let folderScanState = $state<FolderScanState>("scanning");
@@ -107,7 +116,7 @@
 </script>
 
 <div class="panel-shell">
-  <button class="close-btn" onclick={onclose} aria-label="Close device sync">
+  <button class="close-btn" onclick={handleClose} aria-label="Close device sync">
     <X size={18} />
   </button>
 

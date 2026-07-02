@@ -30,6 +30,7 @@ function createDeviceStore() {
       const unlisten = await onDeviceStatusChanged((payload) => {
         status = payload;
         if (!payload.connected) {
+          commands.deviceCancelSync();
           ui.closeDeviceSync();
         }
       });

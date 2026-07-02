@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use tauri::{AppHandle, Emitter};
 use walkdir::WalkDir;
@@ -72,12 +74,14 @@ pub fn preview_sync(
 
 /// Performs the sync: copies additions to the device and, when `mode` is
 /// `All`, also removes device files that are no longer in the library.
-/// Emits `device-sync-progress` events throughout.
+/// Emits `device-sync-progress` events throughout. Checks `cancel` between
+/// every file operation; when set the sync stops cleanly without partial writes.
 pub fn perform_sync(
     device_music_path: PathBuf,
     mode: SyncMode,
     db: DbPool,
     app_handle: AppHandle,
+    cancel: Arc<AtomicBool>,
 ) -> Result<(), AppError> {
     let preview = preview_sync(&device_music_path, &db, &app_handle)?;
 
@@ -90,6 +94,10 @@ pub fn perform_sync(
     let mut current = 0;
 
     for entry in &preview.to_add {
+        if cancel.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+
         let source = find_in_library_roots(&entry.relative_path, &roots);
         let Some(source) = source else {
             current += 1;
@@ -112,6 +120,10 @@ pub fn perform_sync(
     }
 
     for entry in &to_delete {
+        if cancel.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+
         let target = device_music_path.join(&entry.relative_path);
         if target.exists() {
             std::fs::remove_file(&target)?;

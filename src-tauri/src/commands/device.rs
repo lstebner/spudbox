@@ -1,3 +1,5 @@
+use std::sync::atomic::Ordering;
+
 use tauri::{AppHandle, State};
 
 use crate::db::queries::settings;
@@ -94,7 +96,10 @@ pub async fn device_preview_sync(
 }
 
 /// Performs the sync (copy additions, and optionally delete removed tracks).
-/// Emits `device-sync-progress` events throughout.
+/// Emits `device-sync-progress` events throughout. Returns an error immediately
+/// if a sync is already running so two syncs can never execute concurrently.
+/// Resets the cancel flag at the start of every sync so a prior cancel signal
+/// doesn't affect a freshly started run.
 #[tauri::command]
 pub async fn device_perform_sync(
     state: State<'_, AppState>,
@@ -102,13 +107,33 @@ pub async fn device_perform_sync(
     music_subfolder: String,
     mode: SyncMode,
 ) -> Result<(), AppError> {
+    let sync_running = state.device_sync_running.clone();
+    if sync_running
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return Err(AppError::Device("a sync is already in progress".to_string()));
+    }
+    let cancel = state.device_sync_cancel.clone();
+    cancel.store(false, Ordering::SeqCst);
     let db = state.db.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let mount = detection::find_mtp_mount()
-            .ok_or_else(|| AppError::Device("no MTP device connected".to_string()))?;
-        let device_music_path = mount.mount_path.join(&music_subfolder);
-        sync::perform_sync(device_music_path, mode, db, app)
+        let result = (|| {
+            let mount = detection::find_mtp_mount()
+                .ok_or_else(|| AppError::Device("no MTP device connected".to_string()))?;
+            let device_music_path = mount.mount_path.join(&music_subfolder);
+            sync::perform_sync(device_music_path, mode, db, app, cancel)
+        })();
+        sync_running.store(false, Ordering::SeqCst);
+        result
     })
     .await
     .expect("sync task panicked")
+}
+
+/// Signals a running sync to stop cleanly between file operations.
+/// No-op if no sync is in progress.
+#[tauri::command]
+pub fn device_cancel_sync(state: State<AppState>) {
+    state.device_sync_cancel.store(true, Ordering::SeqCst);
 }

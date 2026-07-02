@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use tauri::{AppHandle, Emitter};
+use walkdir::WalkDir;
 
 use super::DeviceStatus;
 
@@ -93,6 +94,17 @@ pub fn find_music_folders(mount_path: &Path) -> Vec<String> {
     results
 }
 
+/// Spawns a background thread that walks `music_path` purely to populate
+/// gvfs's MTP directory cache. The first `read_dir` on an MTP path sends a
+/// USB `GetObjectHandles` request to the device; gvfs caches the result so
+/// subsequent reads are instant. Pre-walking on device connect means the
+/// user-triggered preview scan hits the cache rather than the device.
+fn spawn_gvfs_cache_warmup(music_path: PathBuf) {
+    std::thread::spawn(move || {
+        for _ in WalkDir::new(&music_path).into_iter().flatten() {}
+    });
+}
+
 fn list_subdirectories(path: &Path) -> Vec<PathBuf> {
     let Ok(entries) = std::fs::read_dir(path) else { return Vec::new() };
     entries
@@ -119,6 +131,9 @@ pub fn start_detection_loop(app_handle: AppHandle) {
                 let status = match mount {
                     Some(m) => {
                         let detected_music_subfolder = find_music_folders(&m.mount_path).into_iter().next();
+                        if let Some(ref subfolder) = detected_music_subfolder {
+                            spawn_gvfs_cache_warmup(m.mount_path.join(subfolder));
+                        }
                         DeviceStatus {
                             connected: true,
                             device_name: m.device_name,
