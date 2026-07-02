@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::db::queries::settings;
-use crate::device::{detection, sync, DeviceKind, DeviceStatus, SyncMode, SyncPreview, SyncResult};
+use crate::device::{detection, sync, DeviceStatus, SyncMode, SyncPreview, SyncResult};
 use crate::error::AppError;
 use crate::state::AppState;
 

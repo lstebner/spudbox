@@ -73,7 +73,7 @@ fn first_subdirectory_name(path: &Path) -> Option<String> {
         .map(|e| e.file_name().to_string_lossy().into_owned())
 }
 
-/// Searches the MTP mount for folders named "music" (case-insensitive) using
+/// Searches a device mount for folders named "music" (case-insensitive) using
 /// an explicit breadth-first traversal rather than WalkDir.
 ///
 /// WalkDir's `.flatten()` silently drops entire directory subtrees when a
@@ -83,15 +83,15 @@ fn first_subdirectory_name(path: &Path) -> Option<String> {
 /// directory does not affect its siblings, so both storage units are reliably
 /// found even when MTP is intermittently unresponsive.
 ///
-/// The search stops descending into a branch once a qualifying folder is found;
-/// it explores up to 4 levels below the mount root to handle devices whose
-/// storage units are nested under a device-name directory. Hidden directories
-/// (starting with `.`) are skipped throughout.
+/// The search starts from mount_path itself so a Music folder at the root of a
+/// USB drive is found on the first iteration. The loop explores up to 5 levels
+/// deep to handle MTP devices whose Music folder is nested under a device-name
+/// directory and a storage-unit directory. Hidden directories (`.`) are skipped.
 pub fn find_music_folders(mount_path: &Path) -> Vec<String> {
     let mut results: Vec<String> = Vec::new();
-    let mut current_level = list_subdirectories(mount_path);
+    let mut current_level = vec![mount_path.to_path_buf()];
 
-    for _ in 0..4 {
+    for _ in 0..5 {
         let mut next_level: Vec<PathBuf> = Vec::new();
 
         for directory in &current_level {
@@ -137,17 +137,6 @@ fn spawn_gvfs_cache_warmup(music_path: PathBuf) {
     });
 }
 
-fn list_subdirectories(path: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(path) else { return Vec::new() };
-    entries
-        .flatten()
-        .filter(|entry| {
-            entry.file_type().is_ok_and(|file_type| file_type.is_dir())
-                && !entry.file_name().to_string_lossy().starts_with('.')
-        })
-        .map(|entry| entry.path())
-        .collect()
-}
 
 /// Spawns a background OS thread that polls for MTP device connects/disconnects
 /// every 3 seconds and emits `device-status-changed` events on state changes.
