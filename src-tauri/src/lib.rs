@@ -1,6 +1,7 @@
 mod audio;
 mod commands;
 mod db;
+mod device;
 mod error;
 mod events;
 mod mpris;
@@ -59,6 +60,7 @@ pub fn run() {
 
             app.manage(AppState { db: pool, player });
             tray::setup_tray(app)?;
+            device::detection::start_detection_loop(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -85,7 +87,12 @@ pub fn run() {
             commands::playback::playback_previous,
             commands::playback::playback_seek,
             commands::playback::playback_set_volume,
-            commands::playback::playback_get_snapshot
+            commands::playback::playback_get_snapshot,
+            commands::device::device_get_status,
+            commands::device::device_find_music_folders,
+            commands::device::device_save_music_subfolder,
+            commands::device::device_preview_sync,
+            commands::device::device_perform_sync
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AlbumRow, ArtistRow, PlaybackSnapshot, ScanResult, SyncStats, SyncStatus, TrackRow } from "$lib/types";
+import type { AlbumRow, ArtistRow, DeviceStatus, DeviceSyncMode, DeviceSyncPreview, PlaybackSnapshot, ScanResult, SyncStats, SyncStatus, TrackRow } from "$lib/types";
 
 export const commands = {
   ping: () => invoke<string>("ping"),
@@ -35,4 +35,13 @@ export const commands = {
     invoke<void>("sync_configure", { dbUrl, token }),
   syncStatus: () => invoke<SyncStatus>("sync_status"),
   syncNow: () => invoke<SyncStats>("sync_now"),
+
+  deviceGetStatus: () => invoke<DeviceStatus>("device_get_status"),
+  deviceFindMusicFolders: () => invoke<string[]>("device_find_music_folders"),
+  deviceSaveMusicSubfolder: (subfolder: string) =>
+    invoke<void>("device_save_music_subfolder", { subfolder }),
+  devicePreviewSync: (musicSubfolder: string) =>
+    invoke<DeviceSyncPreview>("device_preview_sync", { musicSubfolder }),
+  devicePerformSync: (musicSubfolder: string, mode: DeviceSyncMode) =>
+    invoke<void>("device_perform_sync", { musicSubfolder, mode }),
 };
