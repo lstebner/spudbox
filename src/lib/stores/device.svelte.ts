@@ -1,3 +1,4 @@
+import { SvelteSet } from "svelte/reactivity";
 import { commands } from "$lib/api/commands";
 import {
   onDevicePreviewProgress,
@@ -20,6 +21,7 @@ function createDeviceStore() {
   let previewProgressCount = $state(0);
   let syncRunning = $state(false);
   let syncProgress = $state<DeviceSyncProgress | null>(null);
+  let completedPaths = new SvelteSet<string>();
 
   return {
     get connected() { return status.connected; },
@@ -30,6 +32,7 @@ function createDeviceStore() {
     get previewProgressCount() { return previewProgressCount; },
     get syncRunning() { return syncRunning; },
     get syncProgress() { return syncProgress; },
+    get completedPaths() { return completedPaths; },
 
     async init() {
       status = await commands.deviceGetStatus();
@@ -37,9 +40,12 @@ function createDeviceStore() {
       // These listeners are permanent for the app lifetime — syncRunning reflects
       // actual backend state, not JS execution flow, so closing and re-opening the
       // panel never loses the running state.
-      await onDeviceSyncStarted(() => { syncRunning = true; syncProgress = null; });
+      await onDeviceSyncStarted(() => { syncRunning = true; syncProgress = null; completedPaths.clear(); });
       await onDeviceSyncEnded(() => { syncRunning = false; syncProgress = null; });
-      await onDeviceSyncProgress((payload) => { syncProgress = payload; });
+      await onDeviceSyncProgress((payload) => {
+        syncProgress = payload;
+        completedPaths.add(payload.completed_relative_path);
+      });
       await onDevicePreviewProgress((payload) => { previewProgressCount = payload.device_tracks_found; });
 
       const unlisten = await onDeviceStatusChanged((payload) => {
@@ -51,6 +57,7 @@ function createDeviceStore() {
           previewRunning = false;
           syncRunning = false;
           syncProgress = null;
+          completedPaths.clear();
         }
       });
       return unlisten;

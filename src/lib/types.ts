@@ -110,6 +110,7 @@ export type DeviceSyncProgress = {
   total: number;
   current_file: string;
   phase: "copying" | "deleting";
+  completed_relative_path: string;
 };
 
 export type DeviceSyncMode = "additions_only" | "all";

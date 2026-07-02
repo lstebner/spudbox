@@ -130,6 +130,7 @@ pub fn perform_sync(
             total,
             current_file: format!("{} — {}", entry.artist, entry.title),
             phase: "copying".to_string(),
+            completed_relative_path: entry.relative_path.clone(),
         });
     }
 
@@ -150,6 +151,7 @@ pub fn perform_sync(
             total,
             current_file: format!("{} — {}", entry.artist, entry.title),
             phase: "deleting".to_string(),
+            completed_relative_path: entry.relative_path.clone(),
         });
     }
 

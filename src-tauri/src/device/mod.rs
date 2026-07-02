@@ -56,6 +56,9 @@ pub struct SyncProgress {
     pub total: usize,
     pub current_file: String,
     pub phase: String,
+    /// Original relative path of the just-completed file, so the frontend can
+    /// mark individual preview list entries as done without relying on ordering.
+    pub completed_relative_path: String,
 }
 
 #[derive(Debug, Serialize)]

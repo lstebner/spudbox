@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { X, HardDrive, RefreshCw } from "@lucide/svelte";
+  import { X, HardDrive, RefreshCw, Check } from "@lucide/svelte";
   import { confirm } from "@tauri-apps/plugin-dialog";
   import { commands } from "$lib/api/commands";
   import { device } from "$lib/stores/device.svelte";
@@ -207,8 +207,15 @@
         {:else}
           <ul class="change-list">
             {#each preview.to_add as entry (entry.relative_path)}
-              <li class="change-item">
-                <span class="change-icon add" aria-label="Add">+</span>
+              {@const done = device.completedPaths.has(entry.relative_path)}
+              <li class="change-item" class:done>
+                <span class="change-icon" class:add={!done} class:done aria-label={done ? "Copied" : "Add"}>
+                  {#if done}
+                    <Check size={12} />
+                  {:else}
+                    +
+                  {/if}
+                </span>
                 <span class="change-text">
                   <span class="change-artist">{entry.artist}</span>
                   <span class="change-sep">·</span>
@@ -219,8 +226,15 @@
               </li>
             {/each}
             {#each preview.to_delete as entry (entry.relative_path)}
-              <li class="change-item">
-                <span class="change-icon remove" aria-label="Remove">−</span>
+              {@const done = device.completedPaths.has(entry.relative_path)}
+              <li class="change-item" class:done>
+                <span class="change-icon" class:remove={!done} class:done aria-label={done ? "Removed" : "Remove"}>
+                  {#if done}
+                    <Check size={12} />
+                  {:else}
+                    −
+                  {/if}
+                </span>
                 <span class="change-text">
                   <span class="change-artist">{entry.artist}</span>
                   <span class="change-sep">·</span>
@@ -578,6 +592,11 @@
 
   .change-icon.add { color: #6fcf6f; }
   .change-icon.remove { color: #e07070; }
+  .change-icon.done { color: var(--text-tertiary); display: flex; align-items: center; justify-content: center; }
+
+  .change-item.done {
+    opacity: 0.4;
+  }
 
   .change-text {
     display: flex;
