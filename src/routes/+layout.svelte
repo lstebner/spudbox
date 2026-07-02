@@ -1,18 +1,24 @@
 <script lang="ts">
   import "$lib/styles/theme.css";
-  import { Settings } from "@lucide/svelte";
+  import { confirm } from "@tauri-apps/plugin-dialog";
+  import { HardDrive, Settings } from "@lucide/svelte";
   import { untrack } from "svelte";
   import ArtistList from "$lib/components/sidebar/ArtistList.svelte";
   import TransportBar from "$lib/components/transport/TransportBar.svelte";
   import SettingsPanel from "$lib/components/settings/SettingsPanel.svelte";
+  import DeviceSyncPanel from "$lib/components/device/DeviceSyncPanel.svelte";
   import { library } from "$lib/stores/library.svelte";
   import { player } from "$lib/stores/player.svelte";
   import { ui, type AlbumSort } from "$lib/stores/ui.svelte";
+  import { device } from "$lib/stores/device.svelte";
 
   let { children } = $props();
 
   $effect(() => {
-    if (library.selectedAlbumId !== null) ui.closeSettings();
+    if (library.selectedAlbumId !== null) {
+      ui.closeSettings();
+      ui.closeDeviceSync();
+    }
   });
 
   $effect(() => {
@@ -21,6 +27,7 @@
   });
 
   library.refresh().then(() => library.rescan());
+  device.init();
 </script>
 
 <div class="app-shell">
@@ -46,18 +53,57 @@
           </div>
         {/if}
       </div>
-      <button
-        class="cog"
-        class:active={ui.showSettings}
-        onclick={() => (ui.showSettings ? ui.closeSettings() : ui.openSettings())}
-        aria-label="Settings"
-      >
-        <Settings size={20} />
-      </button>
+      <div class="toolbar-right">
+        {#if device.connected}
+          <button
+            class="cog"
+            class:active={ui.showDeviceSync}
+            onclick={async () => {
+              if (ui.showDeviceSync) {
+                if (device.syncRunning) {
+                  const confirmed = await confirm("A sync is in progress — stop it and close?", {
+                    title: "Stop sync?",
+                    kind: "warning",
+                    okLabel: "Stop & close",
+                    cancelLabel: "Keep syncing",
+                  });
+                  if (!confirmed) return;
+                  await device.cancelSync();
+                } else if (device.previewRunning) {
+                  const confirmed = await confirm("A preview scan is in progress — stop it and close?", {
+                    title: "Stop preview?",
+                    kind: "warning",
+                    okLabel: "Stop & close",
+                    cancelLabel: "Keep scanning",
+                  });
+                  if (!confirmed) return;
+                  await device.cancelPreview();
+                }
+                ui.closeDeviceSync();
+              } else {
+                ui.openDeviceSync();
+              }
+            }}
+            aria-label="Device sync"
+          >
+            <HardDrive size={20} />
+          </button>
+        {/if}
+        <button
+          class="cog"
+          class:active={ui.showSettings}
+          onclick={() => (ui.showSettings ? ui.closeSettings() : ui.openSettings())}
+          aria-label="Settings"
+        >
+          <Settings size={20} />
+        </button>
+      </div>
     </div>
     <div class="content-body">
       {#if ui.showSettings}
         <SettingsPanel onclose={() => ui.closeSettings()} />
+      {:else if ui.showDeviceSync}
+        <DeviceSyncPanel onclose={() => ui.closeDeviceSync()} />
       {:else}
         {@render children()}
       {/if}
@@ -144,6 +190,12 @@
 
   .sort-select:focus {
     border-color: var(--accent);
+  }
+
+  .toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 2px;
   }
 
   .cog {

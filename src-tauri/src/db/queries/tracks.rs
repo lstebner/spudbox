@@ -76,6 +76,39 @@ pub fn upsert(conn: &Connection, t: &NewTrack) -> Result<i64, AppError> {
     Ok(id)
 }
 
+pub struct TrackPathEntry {
+    pub path: String,
+    pub size_bytes: u64,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+}
+
+/// Returns path, file size, and display metadata for every active
+/// (non-archived) track, used by device sync to build the library-side file
+/// set with human-readable labels for the preview list.
+pub fn active_paths_with_sizes(conn: &Connection) -> Result<Vec<TrackPathEntry>, AppError> {
+    let mut stmt = conn.prepare(
+        "SELECT t.path, t.file_size, t.title,
+                COALESCE(ar.name, 'Unknown Artist'),
+                COALESCE(al.title, 'Unknown Album')
+         FROM tracks t
+         LEFT JOIN artists ar ON ar.id = t.track_artist_id
+         LEFT JOIN albums  al ON al.id  = t.album_id
+         WHERE t.is_archived = 0",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(TrackPathEntry {
+            path: row.get(0)?,
+            size_bytes: row.get::<_, i64>(1)? as u64,
+            title: row.get(2)?,
+            artist: row.get(3)?,
+            album: row.get(4)?,
+        })
+    })?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
+}
+
 /// Loads `path -> (file_mtime, file_size)` for every active (non-archived) track,
 /// used by the scanner to skip re-parsing unchanged files and to detect deleted
 /// files. Archived tracks are excluded so the scanner does not treat them as

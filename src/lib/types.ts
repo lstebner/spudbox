@@ -78,3 +78,48 @@ export type SyncStatus = {
   configured: boolean;
   machine_id: string;
 };
+
+export type DeviceKind = "mtp" | "usb_storage";
+
+export type DeviceStatus = {
+  connected: boolean;
+  kind: DeviceKind;
+  device_name: string;
+  mount_path: string;
+  detected_music_subfolder: string | null;
+};
+
+export type SyncEntry = {
+  relative_path: string;
+  size_bytes: number;
+  artist: string;
+  album: string;
+  title: string;
+};
+
+export type DeviceSyncPreview = {
+  to_add: SyncEntry[];
+  to_delete: SyncEntry[];
+  device_free_bytes: number;
+  required_bytes: number;
+};
+
+export type DevicePreviewProgress = {
+  device_tracks_found: number;
+};
+
+export type DeviceSyncProgress = {
+  current: number;
+  total: number;
+  current_file: string;
+  phase: "copying" | "deleting";
+  completed_relative_path: string;
+};
+
+export type DeviceSyncMode = "additions_only" | "all";
+
+export type DeviceSyncResult = {
+  copied: number;
+  deleted: number;
+  cancelled: boolean;
+};

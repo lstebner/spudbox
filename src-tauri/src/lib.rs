@@ -1,6 +1,7 @@
 mod audio;
 mod commands;
 mod db;
+mod device;
 mod error;
 mod events;
 mod mpris;
@@ -9,6 +10,7 @@ mod state;
 mod sync;
 mod tray;
 
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use tauri::Manager;
@@ -57,8 +59,15 @@ pub fn run() {
             let mpris = Arc::new(Mpris::init(player.clone()).expect("failed to init mpris"));
             engine_builder.spawn(app.handle().clone(), mpris, pool.clone());
 
-            app.manage(AppState { db: pool, player });
+            app.manage(AppState {
+                db: pool,
+                player,
+                device_sync_running: Arc::new(AtomicBool::new(false)),
+                device_sync_cancel: Arc::new(AtomicBool::new(false)),
+                device_preview_cancel: Arc::new(AtomicBool::new(false)),
+            });
             tray::setup_tray(app)?;
+            device::detection::start_detection_loop(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -85,7 +94,14 @@ pub fn run() {
             commands::playback::playback_previous,
             commands::playback::playback_seek,
             commands::playback::playback_set_volume,
-            commands::playback::playback_get_snapshot
+            commands::playback::playback_get_snapshot,
+            commands::device::device_get_status,
+            commands::device::device_find_music_folders,
+            commands::device::device_save_music_subfolder,
+            commands::device::device_preview_sync,
+            commands::device::device_perform_sync,
+            commands::device::device_cancel_sync,
+            commands::device::device_cancel_preview
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

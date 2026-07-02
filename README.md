@@ -19,6 +19,9 @@ A custom music player for Linux, built as a nicer alternative to Clementine: lib
 - Play history and stats tracked per track
 - Remembers volume and resumes the last queue/track (paused) on next launch
 - **Cloud sync** — ratings and play counts sync across machines via a [Turso](https://turso.tech) database (free tier); configure once in Settings with a DB URL and auth token
+- **Device sync** — copy your library to a connected DAP or USB drive via the toolbar icon. Supports any device that mounts as a filesystem (USB mass storage, MTP via gvfs). The sync panel shows a preview of what will change before anything is written; syncing can be cancelled at any point and safely resumed by re-running the preview.
+
+  > **Transfer speed note:** USB mass storage devices transfer at full USB speed and are strongly recommended when your player supports it. MTP (used by most modern DAPs and Android phones) is inherently serial — the protocol requires a device acknowledgement after every file before the next one can begin — so syncing a large library over MTP will be slow regardless of USB generation. If your device offers a choice of connection mode, choose USB storage (or "USB disk") over MTP.
 
 ## Prerequisites (Linux)
 

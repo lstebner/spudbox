@@ -12,6 +12,10 @@ pub enum AppError {
     Io(#[from] std::io::Error),
     #[error("tauri error: {0}")]
     Tauri(#[from] tauri::Error),
+    #[error("device error: {0}")]
+    Device(String),
+    #[error("cancelled")]
+    Cancelled,
 }
 
 impl Serialize for AppError {
