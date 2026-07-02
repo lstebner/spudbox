@@ -18,6 +18,11 @@ const SYNC_PROGRESS_EVENT: &str = "device-sync-progress";
 /// How many audio files to find on the device between progress event emissions.
 const PREVIEW_PROGRESS_INTERVAL: usize = 25;
 
+/// MTP sessions can go stale mid-transfer (device power-saving, USB hiccup).
+/// Retrying after a short delay recovers from transient failures transparently.
+const MAX_COPY_RETRIES: u32 = 3;
+const COPY_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(2);
+
 const AUDIO_EXTENSIONS: &[&str] = &["flac", "mp3", "aac", "m4a", "wav", "ogg", "opus", "aiff"];
 
 /// Computes what would change if the library were synced to `device_music_path`:
@@ -37,11 +42,15 @@ pub fn preview_sync(
     let library_map = build_library_map(&library_tracks, &roots);
     let device_map = walk_device(device_music_path, app_handle, cancel)?;
 
+    // Use the original source path in SyncEntry.relative_path so that
+    // find_in_library_roots can locate the file on disk. The FAT-sanitized
+    // key is only used here for the device comparison; perform_sync
+    // re-sanitizes the destination when writing.
     let mut to_add: Vec<SyncEntry> = library_map
         .iter()
-        .filter(|(path, _)| !device_map.contains_key(*path))
-        .map(|(path, entry)| SyncEntry {
-            relative_path: path.clone(),
+        .filter(|(fat_key, _)| !device_map.contains_key(*fat_key))
+        .map(|(_, entry)| SyncEntry {
+            relative_path: entry.source_relative_path.clone(),
             size_bytes: entry.size_bytes,
             artist: entry.artist.clone(),
             album: entry.album.clone(),
@@ -109,15 +118,10 @@ pub fn perform_sync(
             continue;
         };
 
-        let destination = device_music_path.join(&entry.relative_path);
-        if let Some(parent) = destination.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        // std::fs::copy uses copy_file_range on Linux, which gvfs-fuse returns
-        // EOPNOTSUPP (os error 95) for. Read/write via io::copy works correctly.
-        let mut source_file = std::fs::File::open(&source)?;
-        let mut destination_file = std::fs::File::create(&destination)?;
-        std::io::copy(&mut source_file, &mut destination_file)?;
+        // Sanitize for FAT32/exFAT: the library path may contain characters
+        // (e.g. `?`) that are valid on Linux but forbidden on device filesystems.
+        let destination = device_music_path.join(sanitize_path_for_fat(&entry.relative_path));
+        copy_to_device(&source, &destination)?;
 
         copied += 1;
         current += 1;
@@ -153,14 +157,17 @@ pub fn perform_sync(
 }
 
 struct LibraryEntry {
+    /// Original path on the Linux filesystem, used to locate the source file.
+    source_relative_path: String,
     size_bytes: u64,
     artist: String,
     album: String,
     title: String,
 }
 
-/// Builds a map of `relative_path → LibraryEntry` for all active library
-/// tracks, using each track's library root to compute the relative path.
+/// Builds a map keyed by the FAT-sanitized relative path (for correct comparison
+/// against device filenames) with the original Linux path stored in the value
+/// (for source file lookup during sync).
 fn build_library_map(
     track_list: &[tracks::TrackPathEntry],
     roots: &[String],
@@ -174,7 +181,10 @@ fn build_library_map(
             .max_by_key(|root| root.len());
         if let Some(root) = best_root {
             if let Ok(relative) = track_path.strip_prefix(root) {
-                map.insert(relative.to_string_lossy().into_owned(), LibraryEntry {
+                let source_relative_path = relative.to_string_lossy().into_owned();
+                let fat_key = sanitize_path_for_fat(&source_relative_path);
+                map.insert(fat_key, LibraryEntry {
+                    source_relative_path,
                     size_bytes: track.size_bytes,
                     artist: track.artist.clone(),
                     album: track.album.clone(),
@@ -184,6 +194,28 @@ fn build_library_map(
         }
     }
     map
+}
+
+/// Replaces characters forbidden in FAT32/exFAT filenames with `_` and strips
+/// trailing dots and spaces from each path component. MTP devices (including
+/// DAPs like the FiiO M21) use FAT-based filesystems that reject filenames
+/// containing `\ : * ? " < > |` or control characters — gvfs surfaces this
+/// rejection as EIO on `File::create`, before any data is transferred.
+fn sanitize_path_for_fat(path: &str) -> String {
+    path.split('/')
+        .map(|component| {
+            let sanitized: String = component
+                .chars()
+                .map(|c| match c {
+                    '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+                    c if (c as u32) < 32 => '_',
+                    c => c,
+                })
+                .collect();
+            sanitized.trim_end_matches(['.', ' ']).to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 /// Walks `device_music_path` and returns `relative_path → size_bytes` for
@@ -247,6 +279,36 @@ fn parse_display_info(relative_path: &str) -> (String, String, String) {
     let artist = if n >= 3 { parts[n - 3].to_string() } else { String::new() };
 
     (artist, album, title)
+}
+
+/// Copies `source` to `destination`, retrying up to `MAX_COPY_RETRIES` times
+/// on failure. Each retry removes any partial file and waits `COPY_RETRY_DELAY`
+/// before trying again, giving the MTP session time to recover from USB hiccups
+/// that cause transient EIO errors during long transfers.
+fn copy_to_device(source: &Path, destination: &Path) -> Result<(), AppError> {
+    let mut last_error: Option<std::io::Error> = None;
+    for attempt in 0..=MAX_COPY_RETRIES {
+        if attempt > 0 {
+            let _ = std::fs::remove_file(destination);
+            std::thread::sleep(COPY_RETRY_DELAY);
+        }
+        let result = (|| -> Result<(), std::io::Error> {
+            if let Some(parent) = destination.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            // std::fs::copy uses copy_file_range on Linux, which gvfs-fuse returns
+            // EOPNOTSUPP (os error 95) for. Read/write via io::copy works correctly.
+            let mut source_file = std::fs::File::open(source)?;
+            let mut destination_file = std::fs::File::create(destination)?;
+            std::io::copy(&mut source_file, &mut destination_file)?;
+            Ok(())
+        })();
+        match result {
+            Ok(()) => return Ok(()),
+            Err(error) => last_error = Some(error),
+        }
+    }
+    Err(AppError::Io(last_error.unwrap()))
 }
 
 /// Searches each library root for a file at `relative_path`, returning the
@@ -329,6 +391,26 @@ mod tests {
         assert_eq!(artist, "The Beatles");
         assert_eq!(album, "Abbey Road");
         assert_eq!(title, "01 Come Together");
+    }
+
+    #[test]
+    fn sanitize_path_for_fat_replaces_forbidden_characters() {
+        assert_eq!(
+            sanitize_path_for_fat("Artist/Album/01 - What Is This_.flac"),
+            "Artist/Album/01 - What Is This_.flac"
+        );
+        assert_eq!(
+            sanitize_path_for_fat("Curl Up and Die/Unfortunately We're Not Robots/Why the Fuck Do You?.flac"),
+            "Curl Up and Die/Unfortunately We're Not Robots/Why the Fuck Do You_.flac"
+        );
+        assert_eq!(
+            sanitize_path_for_fat("Artist: Live/Track \"One\" <Two>.flac"),
+            "Artist_ Live/Track _One_ _Two_.flac"
+        );
+        assert_eq!(
+            sanitize_path_for_fat("Band/Album.../Track .flac"),
+            "Band/Album/Track .flac"
+        );
     }
 
     #[test]
