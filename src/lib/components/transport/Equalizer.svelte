@@ -28,6 +28,38 @@
     };
   }
 
+  function lowShelfCoeffs(f: number, sr: number, gainDb: number) {
+    const amplitude = Math.pow(10, gainDb / 40);
+    const omega = (2 * Math.PI * f) / sr;
+    const cosOmega = Math.cos(omega);
+    const alpha = (Math.sin(omega) / 2) * Math.sqrt(2);
+    const twoSqrtAAlpha = 2 * Math.sqrt(amplitude) * alpha;
+    const a0 = amplitude + 1 + (amplitude - 1) * cosOmega + twoSqrtAAlpha;
+    return {
+      b0: (amplitude * (amplitude + 1 - (amplitude - 1) * cosOmega + twoSqrtAAlpha)) / a0,
+      b1: (2 * amplitude * (amplitude - 1 - (amplitude + 1) * cosOmega)) / a0,
+      b2: (amplitude * (amplitude + 1 - (amplitude - 1) * cosOmega - twoSqrtAAlpha)) / a0,
+      a1: (-2 * (amplitude - 1 + (amplitude + 1) * cosOmega)) / a0,
+      a2: (amplitude + 1 + (amplitude - 1) * cosOmega - twoSqrtAAlpha) / a0,
+    };
+  }
+
+  function highShelfCoeffs(f: number, sr: number, gainDb: number) {
+    const amplitude = Math.pow(10, gainDb / 40);
+    const omega = (2 * Math.PI * f) / sr;
+    const cosOmega = Math.cos(omega);
+    const alpha = (Math.sin(omega) / 2) * Math.sqrt(2);
+    const twoSqrtAAlpha = 2 * Math.sqrt(amplitude) * alpha;
+    const a0 = amplitude + 1 - (amplitude - 1) * cosOmega + twoSqrtAAlpha;
+    return {
+      b0: (amplitude * (amplitude + 1 + (amplitude - 1) * cosOmega + twoSqrtAAlpha)) / a0,
+      b1: (-2 * amplitude * (amplitude - 1 + (amplitude + 1) * cosOmega)) / a0,
+      b2: (amplitude * (amplitude + 1 + (amplitude - 1) * cosOmega - twoSqrtAAlpha)) / a0,
+      a1: (2 * (amplitude - 1 - (amplitude + 1) * cosOmega)) / a0,
+      a2: (amplitude + 1 - (amplitude - 1) * cosOmega - twoSqrtAAlpha) / a0,
+    };
+  }
+
   type BiquadCoeffs = ReturnType<typeof peakingCoeffs>;
 
   function magnitudeDb(coeffsList: BiquadCoeffs[], freq: number, sr: number): number {
@@ -50,13 +82,12 @@
 
   const svgPoints = $derived(
     (() => {
-      const effectiveGains = player.eqEnabled
-        ? player.eqGains
-        : new Array(8).fill(0);
-
-      const coeffsList = BAND_FREQUENCIES.map((f, i) =>
-        peakingCoeffs(f, DISPLAY_SAMPLE_RATE, effectiveGains[i], EQ_Q),
-      );
+      const coeffsList = BAND_FREQUENCIES.map((f, i) => {
+        if (i === 0) return lowShelfCoeffs(f, DISPLAY_SAMPLE_RATE, player.eqGains[i]);
+        if (i === BAND_FREQUENCIES.length - 1)
+          return highShelfCoeffs(f, DISPLAY_SAMPLE_RATE, player.eqGains[i]);
+        return peakingCoeffs(f, DISPLAY_SAMPLE_RATE, player.eqGains[i], EQ_Q);
+      });
 
       const N = 80;
       const logFMin = Math.log10(20);
@@ -110,7 +141,7 @@
 
   {#if open}
     <div class="eq-popover" role="dialog" aria-label="Equalizer settings">
-      <div class="curve-area">
+      <div class="curve-area" class:disabled={!player.eqEnabled}>
         <svg
           viewBox="0 0 {SVG_WIDTH} {SVG_HEIGHT}"
           preserveAspectRatio="none"
@@ -127,7 +158,7 @@
         </svg>
       </div>
 
-      <div class="bands">
+      <div class="bands" class:disabled={!player.eqEnabled}>
         {#each BAND_FREQUENCIES as _freq, i}
           <div class="band">
             <input
@@ -192,7 +223,7 @@
     position: absolute;
     bottom: calc(100% + 8px);
     right: 0;
-    width: 240px;
+    width: 340px;
     background: var(--bg-elevated);
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -205,7 +236,7 @@
 
   .curve-area {
     width: 100%;
-    height: 48px;
+    height: 64px;
     background: var(--bg-base);
     border-radius: var(--radius-sm);
     overflow: hidden;
@@ -229,12 +260,21 @@
     stroke-linecap: round;
   }
 
+  .curve-area.disabled .curve {
+    stroke: var(--text-tertiary);
+  }
+
   .bands {
     display: flex;
     justify-content: space-between;
     align-items: flex-end;
     gap: 2px;
     padding: 0 2px;
+  }
+
+  .bands.disabled {
+    opacity: 0.35;
+    pointer-events: none;
   }
 
   .band {
@@ -251,14 +291,14 @@
     -webkit-appearance: slider-vertical;
     appearance: slider-vertical;
     width: 20px;
-    height: 116px;
+    height: 190px;
     cursor: pointer;
     accent-color: var(--accent);
     flex-shrink: 0;
   }
 
   .band-label {
-    font-size: 0.6rem;
+    font-size: 1rem;
     color: var(--text-tertiary);
     text-align: center;
     line-height: 1;
@@ -275,7 +315,7 @@
     display: flex;
     align-items: center;
     gap: 5px;
-    font-size: 0.75rem;
+    font-size: 1rem;
     color: var(--text-secondary);
     cursor: pointer;
     user-select: none;
@@ -284,10 +324,15 @@
   .enabled-label input[type="checkbox"] {
     accent-color: var(--accent);
     cursor: pointer;
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
+    margin: 0;
+    align-self: center;
   }
 
   .flat-button {
-    font-size: 0.7rem;
+    font-size: 1rem;
     padding: 2px 8px;
     background: var(--bg-hover);
     border: 1px solid var(--border);

@@ -83,6 +83,48 @@ fn peaking_coefficients(frequency: f32, sample_rate: f32, gain_db: f32, q: f32) 
     }
 }
 
+/// Low-shelf biquad coefficients (S = 1, maximally flat) from the Audio EQ Cookbook.
+/// Boosts/cuts all frequencies below `frequency`; used for the lowest EQ band.
+fn low_shelf_coefficients(frequency: f32, sample_rate: f32, gain_db: f32) -> BiquadCoeffs {
+    let amplitude = 10f32.powf(gain_db / 40.0);
+    let omega = 2.0 * std::f32::consts::PI * frequency / sample_rate;
+    let cos_omega = omega.cos();
+    let alpha = omega.sin() / 2.0 * 2f32.sqrt();
+    let two_sqrt_a_alpha = 2.0 * amplitude.sqrt() * alpha;
+
+    let a0 = (amplitude + 1.0) + (amplitude - 1.0) * cos_omega + two_sqrt_a_alpha;
+    BiquadCoeffs {
+        b0: amplitude * ((amplitude + 1.0) - (amplitude - 1.0) * cos_omega + two_sqrt_a_alpha)
+            / a0,
+        b1: 2.0 * amplitude * ((amplitude - 1.0) - (amplitude + 1.0) * cos_omega) / a0,
+        b2: amplitude * ((amplitude + 1.0) - (amplitude - 1.0) * cos_omega - two_sqrt_a_alpha)
+            / a0,
+        a1: -2.0 * ((amplitude - 1.0) + (amplitude + 1.0) * cos_omega) / a0,
+        a2: ((amplitude + 1.0) + (amplitude - 1.0) * cos_omega - two_sqrt_a_alpha) / a0,
+    }
+}
+
+/// High-shelf biquad coefficients (S = 1, maximally flat) from the Audio EQ Cookbook.
+/// Boosts/cuts all frequencies above `frequency`; used for the highest EQ band.
+fn high_shelf_coefficients(frequency: f32, sample_rate: f32, gain_db: f32) -> BiquadCoeffs {
+    let amplitude = 10f32.powf(gain_db / 40.0);
+    let omega = 2.0 * std::f32::consts::PI * frequency / sample_rate;
+    let cos_omega = omega.cos();
+    let alpha = omega.sin() / 2.0 * 2f32.sqrt();
+    let two_sqrt_a_alpha = 2.0 * amplitude.sqrt() * alpha;
+
+    let a0 = (amplitude + 1.0) - (amplitude - 1.0) * cos_omega + two_sqrt_a_alpha;
+    BiquadCoeffs {
+        b0: amplitude * ((amplitude + 1.0) + (amplitude - 1.0) * cos_omega + two_sqrt_a_alpha)
+            / a0,
+        b1: -2.0 * amplitude * ((amplitude - 1.0) + (amplitude + 1.0) * cos_omega) / a0,
+        b2: amplitude * ((amplitude + 1.0) + (amplitude - 1.0) * cos_omega - two_sqrt_a_alpha)
+            / a0,
+        a1: 2.0 * ((amplitude - 1.0) - (amplitude + 1.0) * cos_omega) / a0,
+        a2: ((amplitude + 1.0) - (amplitude - 1.0) * cos_omega - two_sqrt_a_alpha) / a0,
+    }
+}
+
 fn compute_coefficients(eq: &EqGains, sample_rate: u32) -> [BiquadCoeffs; EQ_BAND_COUNT] {
     let mut coefficients = [BiquadCoeffs::default(); EQ_BAND_COUNT];
     for (band, (&frequency, &gain_db)) in EQ_BAND_FREQUENCIES
@@ -91,8 +133,13 @@ fn compute_coefficients(eq: &EqGains, sample_rate: u32) -> [BiquadCoeffs; EQ_BAN
         .enumerate()
     {
         let effective_gain = if eq.enabled { gain_db } else { 0.0 };
-        coefficients[band] =
-            peaking_coefficients(frequency, sample_rate as f32, effective_gain, EQ_Q);
+        coefficients[band] = match band {
+            0 => low_shelf_coefficients(frequency, sample_rate as f32, effective_gain),
+            n if n == EQ_BAND_COUNT - 1 => {
+                high_shelf_coefficients(frequency, sample_rate as f32, effective_gain)
+            }
+            _ => peaking_coefficients(frequency, sample_rate as f32, effective_gain, EQ_Q),
+        };
     }
     coefficients
 }
@@ -197,6 +244,62 @@ mod tests {
         assert!((coefficients.b0 - 1.0).abs() < 1e-6);
         assert!((coefficients.b1 - coefficients.a1).abs() < 1e-6);
         assert!((coefficients.b2 - coefficients.a2).abs() < 1e-6);
+    }
+
+    #[test]
+    fn low_shelf_at_zero_db_gives_identity_coefficients() {
+        let coefficients = low_shelf_coefficients(63.0, 44100.0, 0.0);
+        assert!((coefficients.b0 - 1.0).abs() < 1e-6);
+        assert!((coefficients.b1 - coefficients.a1).abs() < 1e-6);
+        assert!((coefficients.b2 - coefficients.a2).abs() < 1e-6);
+    }
+
+    #[test]
+    fn high_shelf_at_zero_db_gives_identity_coefficients() {
+        let coefficients = high_shelf_coefficients(8000.0, 44100.0, 0.0);
+        assert!((coefficients.b0 - 1.0).abs() < 1e-6);
+        assert!((coefficients.b1 - coefficients.a1).abs() < 1e-6);
+        assert!((coefficients.b2 - coefficients.a2).abs() < 1e-6);
+    }
+
+    fn measure_gain_db(coefficients: BiquadCoeffs, frequency: f32, sample_rate: f32) -> f32 {
+        let mut state = BiquadState::default();
+        let omega = 2.0 * std::f32::consts::PI * frequency / sample_rate;
+        let skip = 200;
+        let measure = 4000;
+        let mut sum_sq_input = 0.0f32;
+        let mut sum_sq_output = 0.0f32;
+        for index in 0..(skip + measure) {
+            let input = (omega * index as f32).sin();
+            let output = state.process(input, &coefficients);
+            if index >= skip {
+                sum_sq_input += input * input;
+                sum_sq_output += output * output;
+            }
+        }
+        10.0 * (sum_sq_output / sum_sq_input).log10()
+    }
+
+    #[test]
+    fn low_shelf_positive_gain_amplifies_well_below_cutoff() {
+        let gain_db = 6.0_f32;
+        let coefficients = low_shelf_coefficients(63.0, 44100.0, gain_db);
+        let measured = measure_gain_db(coefficients, 10.0, 44100.0);
+        assert!(
+            (measured - gain_db).abs() < 0.5,
+            "expected ~{gain_db} dB at 10 Hz, measured {measured:.2} dB"
+        );
+    }
+
+    #[test]
+    fn high_shelf_positive_gain_amplifies_well_above_cutoff() {
+        let gain_db = 6.0_f32;
+        let coefficients = high_shelf_coefficients(8000.0, 44100.0, gain_db);
+        let measured = measure_gain_db(coefficients, 15000.0, 44100.0);
+        assert!(
+            (measured - gain_db).abs() < 0.5,
+            "expected ~{gain_db} dB at 15 kHz, measured {measured:.2} dB"
+        );
     }
 
     #[test]
