@@ -38,6 +38,7 @@
   }
 
   let open = $state(false);
+  let presetOpen = $state(false);
   let currentPreset = $state<string>("Custom");
   let customGains = $state<number[]>(new Array(8).fill(0));
 
@@ -57,6 +58,15 @@
     } else if (name in PRESETS) {
       player.setEq([...PRESETS[name]], player.eqEnabled);
     }
+    presetOpen = false;
+  }
+
+  function closePresetOnOutsideClick(node: HTMLElement) {
+    function onMouseDown(event: MouseEvent) {
+      if (!node.contains(event.target as Node)) presetOpen = false;
+    }
+    document.addEventListener("mousedown", onMouseDown);
+    return { destroy() { document.removeEventListener("mousedown", onMouseDown); } };
   }
 
   function peakingCoeffs(f: number, sr: number, gainDb: number, q: number) {
@@ -228,17 +238,30 @@
           />
           Enabled
         </label>
-        <div class="preset-wrapper">
-          <select
-            class="preset-select"
-            value={currentPreset}
-            onchange={(e) => applyPreset((e.target as HTMLSelectElement).value)}
-            aria-label="EQ preset"
+        <div class="preset-wrapper" use:closePresetOnOutsideClick>
+          <button
+            class="preset-button"
+            onclick={() => (presetOpen = !presetOpen)}
+            aria-haspopup="listbox"
+            aria-expanded={presetOpen}
           >
-            {#each PRESET_NAMES as name}
-              <option value={name}>{name}</option>
-            {/each}
-          </select>
+            {currentPreset}
+            <span aria-hidden="true">{presetOpen ? "▴" : "▾"}</span>
+          </button>
+          {#if presetOpen}
+            <ul class="preset-list" role="listbox" aria-label="EQ preset">
+              {#each PRESET_NAMES as name}
+                <li role="option" aria-selected={name === currentPreset}>
+                  <button
+                    class:selected={name === currentPreset}
+                    onclick={() => applyPreset(name)}
+                  >
+                    {name}
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
         </div>
       </div>
     </div>
@@ -386,34 +409,60 @@
 
   .preset-wrapper {
     position: relative;
+  }
+
+  .preset-button {
     display: flex;
     align-items: center;
-  }
-
-  .preset-wrapper::after {
-    content: "▾";
-    position: absolute;
-    right: 6px;
-    pointer-events: none;
-    color: var(--text-secondary);
-    line-height: 1;
-  }
-
-  .preset-select {
-    -webkit-appearance: none;
-    appearance: none;
+    gap: 6px;
     font-size: 1rem;
     font-family: inherit;
-    padding: 2px 24px 2px 8px;
+    padding: 2px 8px;
     background: var(--bg-hover);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     color: var(--text-secondary);
     cursor: pointer;
+    white-space: nowrap;
   }
 
-  .preset-select:hover {
+  .preset-button:hover {
     color: var(--text-primary);
     background: var(--bg-selected);
+  }
+
+  .preset-list {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    right: 0;
+    list-style: none;
+    margin: 0;
+    padding: 4px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    min-width: 100%;
+    z-index: 101;
+  }
+
+  .preset-list li button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 4px 10px;
+    font-size: 1rem;
+    font-family: inherit;
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .preset-list li button:hover,
+  .preset-list li button.selected {
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 </style>
