@@ -14,6 +14,8 @@
 
   const album = $derived(library.albums.find((a) => a.id === library.selectedAlbumId) ?? null);
 
+  const totalDurationMs = $derived(library.tracks.reduce((sum, t) => sum + t.duration_ms, 0));
+
   const virtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
     count: 0,
     getScrollElement: () => scrollEl ?? null,
@@ -85,7 +87,7 @@
       </div>
       <div>
         <div class="title">{album.title}</div>
-        <div class="subtitle">{album.album_artist}{album.year ? ` · ${album.year}` : ""}</div>
+        <div class="subtitle">{album.album_artist}{album.year ? ` · ${album.year}` : ""}{totalDurationMs > 0 ? ` · ${formatDuration(totalDurationMs)}` : ""}</div>
         <div class="rating-row">
           <StarRating rating={album.rating} size={16} onRate={(r) => library.setAlbumRating(album.id, r)} />
         </div>
@@ -152,8 +154,8 @@
   }
 
   .art {
-    width: 64px;
-    height: 64px;
+    width: 80px;
+    height: 80px;
     border-radius: var(--radius-sm);
     overflow: hidden;
     background: var(--bg-hover);
@@ -221,12 +223,13 @@
   }
 
   .title {
-    font-weight: 600;
+    font-weight: 500;
+    font-size: 1.25em;
   }
 
   .subtitle {
     color: var(--text-secondary);
-    font-size: 0.85em;
+    font-size: 1em;
   }
 
   .rating-row {
