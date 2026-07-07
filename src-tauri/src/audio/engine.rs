@@ -8,23 +8,22 @@ use souvlaki::{MediaMetadata, MediaPlayback, MediaPosition};
 use tauri::{AppHandle, Emitter};
 
 use super::decode::FileSource;
-use super::{PlaybackSnapshot, PlaybackState, PlayerCommand, Queue, TrackInfo};
+use super::eq::{EqGains, EQ_BAND_COUNT};
+use super::{EqualizerSource, PlaybackSnapshot, PlaybackState, PlayerCommand, Queue, TrackInfo};
 use crate::db::queries::{settings, stats, tracks};
 use crate::mpris::Mpris;
 use crate::state::DbPool;
 
 const PROGRESS_EVENT: &str = "playback-progress";
 const TICK: Duration = Duration::from_millis(250);
-/// How often to checkpoint the session (queue/position) to disk during
-/// otherwise-uneventful playback, so an ungraceful exit only loses a few
-/// seconds of resume accuracy rather than falling back to wherever the
-/// current track last started.
-const SESSION_CHECKPOINT_TICKS: u64 = 40; // ~10s at the 250ms tick above
+const SESSION_CHECKPOINT_TICKS: u64 = 40;
 
 const SETTING_VOLUME: &str = "volume";
 const SETTING_LAST_QUEUE: &str = "last_queue";
 const SETTING_LAST_QUEUE_INDEX: &str = "last_queue_index";
 const SETTING_LAST_POSITION_MS: &str = "last_position_ms";
+const SETTING_EQ_GAINS: &str = "eq_gains";
+const SETTING_EQ_ENABLED: &str = "eq_enabled";
 
 struct EngineState {
     handle: OutputStreamHandle,
@@ -32,6 +31,7 @@ struct EngineState {
     queue: Option<Queue>,
     last_sink_len: usize,
     volume: f32,
+    eq: Arc<ArcSwap<EqGains>>,
     db: DbPool,
     tick_count: u64,
 }
@@ -42,6 +42,7 @@ pub(super) fn run_engine(
     app: AppHandle,
     mpris: Arc<Mpris>,
     db: DbPool,
+    eq: Arc<ArcSwap<EqGains>>,
 ) {
     let (_stream, handle) = match OutputStream::try_default() {
         Ok(v) => v,
@@ -57,6 +58,7 @@ pub(super) fn run_engine(
         queue: None,
         last_sink_len: 0,
         volume: 1.0,
+        eq,
         db,
         tick_count: 0,
     };
@@ -112,7 +114,7 @@ fn poll_queue_advance(state: &mut EngineState, mpris: &Mpris) {
         if let Some(queue) = &state.queue {
             announce_current(queue, mpris, true);
             if let Some(next) = queue.peek_next() {
-                append_track(sink, next);
+                append_track(sink, next, state.eq.clone());
             }
         }
         record_current_play(state);
@@ -193,6 +195,11 @@ fn handle_command(state: &mut EngineState, cmd: PlayerCommand, mpris: &Mpris) {
             }
             persist_session(state);
         }
+        PlayerCommand::SetEq(gains_db, enabled) => {
+            let new_version = state.eq.load().version + 1;
+            state.eq.store(Arc::new(EqGains { gains_db, enabled, version: new_version }));
+            persist_session(state);
+        }
     }
 }
 
@@ -200,7 +207,12 @@ fn handle_command(state: &mut EngineState, cmd: PlayerCommand, mpris: &Mpris) {
 /// current track plus (if any) the next one so the sink is always one
 /// track ahead, and starts (or, for session restore, leaves paused at a
 /// given position) playback.
-fn start_playback_from_queue(state: &mut EngineState, mpris: &Mpris, autoplay: bool, seek_to: Option<Duration>) {
+fn start_playback_from_queue(
+    state: &mut EngineState,
+    mpris: &Mpris,
+    autoplay: bool,
+    seek_to: Option<Duration>,
+) {
     let sink = match Sink::try_new(&state.handle) {
         Ok(s) => s,
         Err(e) => {
@@ -213,11 +225,11 @@ fn start_playback_from_queue(state: &mut EngineState, mpris: &Mpris, autoplay: b
     {
         let Some(queue) = &state.queue else { return };
         let Some(current) = queue.current() else { return };
-        if !append_track(&sink, current) {
+        if !append_track(&sink, current, state.eq.clone()) {
             return;
         }
         if let Some(next) = queue.peek_next() {
-            append_track(&sink, next);
+            append_track(&sink, next, state.eq.clone());
         }
         if autoplay {
             sink.play();
@@ -234,10 +246,10 @@ fn start_playback_from_queue(state: &mut EngineState, mpris: &Mpris, autoplay: b
     state.sink = Some(sink);
 }
 
-fn append_track(sink: &Sink, track: &TrackInfo) -> bool {
+fn append_track(sink: &Sink, track: &TrackInfo, eq: Arc<ArcSwap<EqGains>>) -> bool {
     match FileSource::open(&track.path) {
         Ok(source) => {
-            sink.append(source);
+            sink.append(EqualizerSource::new(source, eq));
             true
         }
         Err(e) => {
@@ -265,11 +277,14 @@ fn announce_current(queue: &Queue, mpris: &Mpris, playing: bool) {
 }
 
 fn record_current_play(state: &EngineState) {
-    let Some(track_id) = state.queue.as_ref().and_then(|q| q.current()).map(|t| t.track_id) else {
+    let Some(track_id) =
+        state.queue.as_ref().and_then(|q| q.current()).map(|t| t.track_id)
+    else {
         return;
     };
     let Ok(conn) = state.db.get() else { return };
-    let played_at = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+    let played_at =
+        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
     if let Err(e) = stats::record_play(&conn, track_id, played_at) {
         eprintln!("failed to record play for track {track_id}: {e}");
     }
@@ -279,10 +294,18 @@ fn persist_session(state: &EngineState) {
     let Ok(conn) = state.db.get() else { return };
     let _ = settings::set(&conn, SETTING_VOLUME, &state.volume.to_string());
 
+    let eq = state.eq.load();
+    if let Ok(gains_json) = serde_json::to_string(&eq.gains_db) {
+        let _ = settings::set(&conn, SETTING_EQ_GAINS, &gains_json);
+    }
+    let _ = settings::set(&conn, SETTING_EQ_ENABLED, &eq.enabled.to_string());
+    drop(eq);
+
     let Some(queue) = &state.queue else { return };
     let ids = queue.track_ids();
     let Ok(ids_json) = serde_json::to_string(&ids) else { return };
-    let position_ms = state.sink.as_ref().map(|s| s.get_pos().as_millis() as u64).unwrap_or(0);
+    let position_ms =
+        state.sink.as_ref().map(|s| s.get_pos().as_millis() as u64).unwrap_or(0);
 
     let _ = settings::set(&conn, SETTING_LAST_QUEUE, &ids_json);
     let _ = settings::set(&conn, SETTING_LAST_QUEUE_INDEX, &queue.index().to_string());
@@ -296,8 +319,8 @@ fn clear_session(state: &EngineState) {
     let _ = settings::set(&conn, SETTING_LAST_POSITION_MS, "0");
 }
 
-/// Restores volume and, if a previous queue was saved, reconstructs it and
-/// leaves it paused at the last known position — never autoplays on
+/// Restores volume, EQ settings, and (if a previous queue was saved) the
+/// queue, leaving it paused at the last known position. Never autoplays on
 /// launch. Deliberately does not call `record_current_play`: restoring a
 /// session isn't a new play of that track.
 fn restore_session(state: &mut EngineState, mpris: &Mpris) {
@@ -306,6 +329,18 @@ fn restore_session(state: &mut EngineState, mpris: &Mpris) {
     if let Ok(Some(vol)) = settings::get(&conn, SETTING_VOLUME) {
         if let Ok(vol) = vol.parse::<f32>() {
             state.volume = vol;
+        }
+    }
+
+    if let Ok(Some(gains_json)) = settings::get(&conn, SETTING_EQ_GAINS) {
+        if let Ok(gains) = serde_json::from_str::<[f32; EQ_BAND_COUNT]>(&gains_json) {
+            let enabled: bool = settings::get(&conn, SETTING_EQ_ENABLED)
+                .ok()
+                .flatten()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(true);
+            let new_version = state.eq.load().version + 1;
+            state.eq.store(Arc::new(EqGains { gains_db: gains, enabled, version: new_version }));
         }
     }
 
@@ -346,7 +381,12 @@ fn restore_session(state: &mut EngineState, mpris: &Mpris) {
         .collect();
 
     state.queue = Some(Queue::new(queue_tracks, index));
-    start_playback_from_queue(state, mpris, false, Some(Duration::from_millis(position_ms)));
+    start_playback_from_queue(
+        state,
+        mpris,
+        false,
+        Some(Duration::from_millis(position_ms)),
+    );
 }
 
 fn build_snapshot(state: &EngineState) -> PlaybackSnapshot {

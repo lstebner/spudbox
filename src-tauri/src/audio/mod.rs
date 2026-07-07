@@ -1,7 +1,9 @@
 mod decode;
 mod engine;
+pub mod eq;
 mod queue;
 
+pub use eq::{EqGains, EqualizerSource, EQ_BAND_COUNT};
 pub use queue::Queue;
 
 use std::path::PathBuf;
@@ -76,12 +78,14 @@ pub enum PlayerCommand {
     Previous,
     Seek(Duration),
     SetVolume(f32),
+    SetEq([f32; EQ_BAND_COUNT], bool),
 }
 
 #[derive(Clone)]
 pub struct PlayerHandle {
     tx: Sender<PlayerCommand>,
     snapshot: Arc<ArcSwap<PlaybackSnapshot>>,
+    eq: Arc<ArcSwap<EqGains>>,
 }
 
 impl PlayerHandle {
@@ -91,6 +95,10 @@ impl PlayerHandle {
 
     pub fn snapshot(&self) -> PlaybackSnapshot {
         (**self.snapshot.load()).clone()
+    }
+
+    pub fn eq_state(&self) -> Arc<EqGains> {
+        self.eq.load_full()
     }
 }
 
@@ -103,23 +111,28 @@ pub struct EngineBuilder {
     tx: Sender<PlayerCommand>,
     rx: Receiver<PlayerCommand>,
     snapshot: Arc<ArcSwap<PlaybackSnapshot>>,
+    eq: Arc<ArcSwap<EqGains>>,
 }
 
 impl EngineBuilder {
     pub fn new() -> Self {
         let (tx, rx) = channel();
         let snapshot = Arc::new(ArcSwap::from_pointee(PlaybackSnapshot::default()));
-        Self { tx, rx, snapshot }
+        let eq = Arc::new(ArcSwap::from_pointee(EqGains::default()));
+        Self { tx, rx, snapshot, eq }
     }
 
     pub fn handle(&self) -> PlayerHandle {
         PlayerHandle {
             tx: self.tx.clone(),
             snapshot: self.snapshot.clone(),
+            eq: self.eq.clone(),
         }
     }
 
     pub fn spawn(self, app: AppHandle, mpris: Arc<Mpris>, db: DbPool) {
-        thread::spawn(move || engine::run_engine(self.rx, self.snapshot, app, mpris, db));
+        thread::spawn(move || {
+            engine::run_engine(self.rx, self.snapshot, app, mpris, db, self.eq)
+        });
     }
 }

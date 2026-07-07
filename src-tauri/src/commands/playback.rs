@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use tauri::State;
 
-use crate::audio::{PlaybackSnapshot, PlayerCommand, TrackInfo};
+use crate::audio::{EQ_BAND_COUNT, PlaybackSnapshot, PlayerCommand, TrackInfo};
 use crate::db::queries::tracks;
 use crate::error::AppError;
 use crate::state::AppState;
@@ -82,4 +82,29 @@ pub fn playback_set_volume(state: State<AppState>, volume: f32) -> Result<(), Ap
 #[tauri::command]
 pub fn playback_get_snapshot(state: State<AppState>) -> PlaybackSnapshot {
     state.player.snapshot()
+}
+
+#[derive(serde::Serialize)]
+pub struct EqSnapshot {
+    gains_db: Vec<f32>,
+    enabled: bool,
+}
+
+#[tauri::command]
+pub fn playback_set_eq(
+    state: State<AppState>,
+    gains_db: Vec<f32>,
+    enabled: bool,
+) -> Result<(), String> {
+    let gains: [f32; EQ_BAND_COUNT] = gains_db
+        .try_into()
+        .map_err(|_| format!("expected {EQ_BAND_COUNT} EQ band gains"))?;
+    state.player.send(PlayerCommand::SetEq(gains, enabled));
+    Ok(())
+}
+
+#[tauri::command]
+pub fn playback_get_eq(state: State<AppState>) -> EqSnapshot {
+    let eq = state.player.eq_state();
+    EqSnapshot { gains_db: eq.gains_db.to_vec(), enabled: eq.enabled }
 }

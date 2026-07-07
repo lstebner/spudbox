@@ -30,6 +30,9 @@ export const commands = {
   playbackSeek: (positionMs: number) => invoke<void>("playback_seek", { positionMs }),
   playbackSetVolume: (volume: number) => invoke<void>("playback_set_volume", { volume }),
   playbackGetSnapshot: () => invoke<PlaybackSnapshot>("playback_get_snapshot"),
+  playbackSetEq: (gainsDb: number[], enabled: boolean) =>
+    invoke<void>("playback_set_eq", { gainsDb, enabled }),
+  playbackGetEq: () => invoke<{ gains_db: number[]; enabled: boolean }>("playback_get_eq"),
 
   syncConfigure: (dbUrl: string, token: string) =>
     invoke<void>("sync_configure", { dbUrl, token }),

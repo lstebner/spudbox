@@ -1,0 +1,303 @@
+<script lang="ts">
+  import { SlidersVertical } from "@lucide/svelte";
+  import { player } from "$lib/stores/player.svelte";
+
+  const BAND_FREQUENCIES = [63, 125, 250, 500, 1000, 2000, 4000, 8000];
+  const BAND_LABELS = ["63", "125", "250", "500", "1k", "2k", "4k", "8k"];
+  const MAX_GAIN_DB = 12;
+  const EQ_Q = 1.414;
+  const DISPLAY_SAMPLE_RATE = 48000;
+
+  const SVG_WIDTH = 220;
+  const SVG_HEIGHT = 44;
+
+  let open = $state(false);
+
+  function peakingCoeffs(f: number, sr: number, gainDb: number, q: number) {
+    const amplitude = Math.pow(10, gainDb / 40);
+    const omega = (2 * Math.PI * f) / sr;
+    const cosOmega = Math.cos(omega);
+    const alpha = Math.sin(omega) / (2 * q);
+    const a0 = 1 + alpha / amplitude;
+    return {
+      b0: (1 + alpha * amplitude) / a0,
+      b1: (-2 * cosOmega) / a0,
+      b2: (1 - alpha * amplitude) / a0,
+      a1: (-2 * cosOmega) / a0,
+      a2: (1 - alpha / amplitude) / a0,
+    };
+  }
+
+  type BiquadCoeffs = ReturnType<typeof peakingCoeffs>;
+
+  function magnitudeDb(coeffsList: BiquadCoeffs[], freq: number, sr: number): number {
+    const w = (2 * Math.PI * freq) / sr;
+    const cosW = Math.cos(w);
+    const sinW = Math.sin(w);
+    const cos2W = 2 * cosW * cosW - 1;
+    const sin2W = 2 * sinW * cosW;
+
+    let magSq = 1.0;
+    for (const c of coeffsList) {
+      const nR = c.b0 + c.b1 * cosW + c.b2 * cos2W;
+      const nI = -(c.b1 * sinW + c.b2 * sin2W);
+      const dR = 1 + c.a1 * cosW + c.a2 * cos2W;
+      const dI = -(c.a1 * sinW + c.a2 * sin2W);
+      magSq *= (nR * nR + nI * nI) / (dR * dR + dI * dI);
+    }
+    return 10 * Math.log10(Math.max(magSq, 1e-10));
+  }
+
+  const svgPoints = $derived(
+    (() => {
+      const effectiveGains = player.eqEnabled
+        ? player.eqGains
+        : new Array(8).fill(0);
+
+      const coeffsList = BAND_FREQUENCIES.map((f, i) =>
+        peakingCoeffs(f, DISPLAY_SAMPLE_RATE, effectiveGains[i], EQ_Q),
+      );
+
+      const N = 80;
+      const logFMin = Math.log10(20);
+      const logFMax = Math.log10(20000);
+
+      return Array.from({ length: N + 1 }, (_, i) => {
+        const logF = logFMin + (i / N) * (logFMax - logFMin);
+        const freq = Math.pow(10, logF);
+        const gainDb = magnitudeDb(coeffsList, freq, DISPLAY_SAMPLE_RATE);
+        const x = (i / N) * SVG_WIDTH;
+        const y = SVG_HEIGHT / 2 - (gainDb / MAX_GAIN_DB) * (SVG_HEIGHT / 2) * 0.85;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      }).join(" ");
+    })(),
+  );
+
+  function setGain(bandIndex: number, gainDb: number) {
+    const newGains = [...player.eqGains];
+    newGains[bandIndex] = gainDb;
+    player.setEq(newGains, player.eqEnabled);
+  }
+
+  function flatten() {
+    player.setEq(new Array(8).fill(0), player.eqEnabled);
+  }
+
+  function clickOutside(node: HTMLElement) {
+    function onMouseDown(event: MouseEvent) {
+      if (!node.contains(event.target as Node)) open = false;
+    }
+    document.addEventListener("mousedown", onMouseDown);
+    return {
+      destroy() {
+        document.removeEventListener("mousedown", onMouseDown);
+      },
+    };
+  }
+</script>
+
+<div class="eq-wrapper" use:clickOutside>
+  <button
+    class="eq-button"
+    class:active={open}
+    onclick={() => (open = !open)}
+    aria-label="Equalizer"
+    aria-expanded={open}
+    title="Equalizer"
+  >
+    <SlidersVertical size={16} />
+  </button>
+
+  {#if open}
+    <div class="eq-popover" role="dialog" aria-label="Equalizer settings">
+      <div class="curve-area">
+        <svg
+          viewBox="0 0 {SVG_WIDTH} {SVG_HEIGHT}"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          <line
+            x1="0"
+            y1={SVG_HEIGHT / 2}
+            x2={SVG_WIDTH}
+            y2={SVG_HEIGHT / 2}
+            class="reference-line"
+          />
+          <polyline points={svgPoints} class="curve" />
+        </svg>
+      </div>
+
+      <div class="bands">
+        {#each BAND_FREQUENCIES as _freq, i}
+          <div class="band">
+            <input
+              type="range"
+              min={-MAX_GAIN_DB}
+              max={MAX_GAIN_DB}
+              step="0.5"
+              value={player.eqGains[i]}
+              oninput={(e) => setGain(i, Number((e.target as HTMLInputElement).value))}
+              aria-label="{BAND_LABELS[i]} Hz gain"
+              aria-valuetext="{player.eqGains[i].toFixed(1)} dB"
+            />
+            <span class="band-label" aria-hidden="true">{BAND_LABELS[i]}</span>
+          </div>
+        {/each}
+      </div>
+
+      <div class="eq-footer">
+        <label class="enabled-label">
+          <input
+            type="checkbox"
+            checked={player.eqEnabled}
+            onchange={(e) =>
+              player.setEq(player.eqGains, (e.target as HTMLInputElement).checked)}
+          />
+          Enabled
+        </label>
+        <button class="flat-button" onclick={flatten}>Flat</button>
+      </div>
+    </div>
+  {/if}
+</div>
+
+<style>
+  .eq-wrapper {
+    position: relative;
+  }
+
+  .eq-button {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+  }
+
+  .eq-button:hover {
+    color: var(--text-primary);
+  }
+
+  .eq-button.active {
+    color: var(--accent);
+  }
+
+  .eq-popover {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    right: 0;
+    width: 240px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .curve-area {
+    width: 100%;
+    height: 48px;
+    background: var(--bg-base);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+
+  .curve-area svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  .reference-line {
+    stroke: var(--border);
+    stroke-width: 1;
+  }
+
+  .curve {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+
+  .bands {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 2px;
+    padding: 0 2px;
+  }
+
+  .band {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    flex: 1;
+  }
+
+  .band input[type="range"] {
+    writing-mode: vertical-lr;
+    direction: rtl;
+    -webkit-appearance: slider-vertical;
+    appearance: slider-vertical;
+    width: 20px;
+    height: 116px;
+    cursor: pointer;
+    accent-color: var(--accent);
+    flex-shrink: 0;
+  }
+
+  .band-label {
+    font-size: 0.6rem;
+    color: var(--text-tertiary);
+    text-align: center;
+    line-height: 1;
+  }
+
+  .eq-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 2px;
+  }
+
+  .enabled-label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .enabled-label input[type="checkbox"] {
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  .flat-button {
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    background: var(--bg-hover);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+
+  .flat-button:hover {
+    color: var(--text-primary);
+    background: var(--bg-selected);
+  }
+</style>
