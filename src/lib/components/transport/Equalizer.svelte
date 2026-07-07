@@ -11,7 +11,52 @@
   const SVG_WIDTH = 220;
   const SVG_HEIGHT = 44;
 
+  // Gains are stored as integers or 0.5-step floats; epsilon guards against
+  // any floating-point rounding in the round-trip through the backend.
+  const GAIN_EPSILON = 0.01;
+
+  const PRESETS: Record<string, number[]> = {
+    Flat:          [ 0,  0,  0,  0,  0,  0,  0,  0],
+    "Bass Boost":  [ 8,  5,  2,  0,  0,  0,  0,  0],
+    "Treble Boost":[ 0,  0,  0,  0,  0,  2,  5,  8],
+    Rock:          [ 6,  4,  1, -2, -2,  1,  4,  6],
+    "Mid Boost":   [-4, -2,  0,  3,  4,  3,  0, -4],
+    Classical:     [ 4,  2,  0, -1, -1,  0,  2,  4],
+    Vocal:         [-2,  0,  1,  3,  4,  3,  1, -2],
+  };
+
+  const PRESET_NAMES = Object.keys(PRESETS);
+
+  function matchPreset(gains: number[]): string | null {
+    for (const [name, presetGains] of Object.entries(PRESETS)) {
+      if (gains.every((g, i) => Math.abs(g - presetGains[i]) < GAIN_EPSILON)) {
+        return name;
+      }
+    }
+    return null;
+  }
+
   let open = $state(false);
+  let currentPreset = $state<string>("Custom");
+  let customGains = $state<number[]>(new Array(8).fill(0));
+
+  $effect(() => {
+    const matched = matchPreset(player.eqGains);
+    if (matched !== null) {
+      currentPreset = matched;
+    } else {
+      currentPreset = "Custom";
+      customGains = [...player.eqGains];
+    }
+  });
+
+  function applyPreset(name: string) {
+    if (name === "Custom") {
+      player.setEq([...customGains], player.eqEnabled);
+    } else if (name in PRESETS) {
+      player.setEq([...PRESETS[name]], player.eqEnabled);
+    }
+  }
 
   function peakingCoeffs(f: number, sr: number, gainDb: number, q: number) {
     const amplitude = Math.pow(10, gainDb / 40);
@@ -141,6 +186,20 @@
 
   {#if open}
     <div class="eq-popover" role="dialog" aria-label="Equalizer settings">
+      <select
+        class="preset-select"
+        value={currentPreset}
+        onchange={(e) => applyPreset((e.target as HTMLSelectElement).value)}
+        aria-label="EQ preset"
+      >
+        <option value="Custom">Custom</option>
+        <optgroup label="Presets">
+          {#each PRESET_NAMES as name}
+            <option value={name}>{name}</option>
+          {/each}
+        </optgroup>
+      </select>
+
       <div class="curve-area" class:disabled={!player.eqEnabled}>
         <svg
           viewBox="0 0 {SVG_WIDTH} {SVG_HEIGHT}"
@@ -232,6 +291,17 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+  }
+
+  .preset-select {
+    width: 100%;
+    font-size: 1rem;
+    color: var(--text-primary);
+    background: var(--bg-base);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 4px 8px;
+    cursor: pointer;
   }
 
   .curve-area {
