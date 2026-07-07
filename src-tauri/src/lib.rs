@@ -96,6 +96,8 @@ pub fn run() {
             commands::playback::playback_seek,
             commands::playback::playback_set_volume,
             commands::playback::playback_get_snapshot,
+            commands::playback::playback_set_eq,
+            commands::playback::playback_get_eq,
             commands::device::device_get_status,
             commands::device::device_find_music_folders,
             commands::device::device_save_music_subfolder,

@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use tauri::State;
 
-use crate::audio::{PlaybackSnapshot, PlayerCommand, TrackInfo};
+use crate::audio::{EQ_BAND_COUNT, PlaybackSnapshot, PlayerCommand, TrackInfo};
 use crate::db::queries::tracks;
 use crate::error::AppError;
 use crate::state::AppState;
@@ -82,4 +82,52 @@ pub fn playback_set_volume(state: State<AppState>, volume: f32) -> Result<(), Ap
 #[tauri::command]
 pub fn playback_get_snapshot(state: State<AppState>) -> PlaybackSnapshot {
     state.player.snapshot()
+}
+
+#[derive(serde::Serialize)]
+pub struct EqSnapshot {
+    gains_db: Vec<f32>,
+    enabled: bool,
+}
+
+fn parse_eq_gains(gains_db: Vec<f32>) -> Result<[f32; EQ_BAND_COUNT], AppError> {
+    gains_db
+        .try_into()
+        .map_err(|_| AppError::InvalidArgument(format!("expected {EQ_BAND_COUNT} EQ band gains")))
+}
+
+#[tauri::command]
+pub fn playback_set_eq(
+    state: State<AppState>,
+    gains_db: Vec<f32>,
+    enabled: bool,
+) -> Result<(), AppError> {
+    let gains = parse_eq_gains(gains_db)?;
+    state.player.send(PlayerCommand::SetEq(gains, enabled));
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_eq_gains_accepts_exactly_eight_values() {
+        let gains = parse_eq_gains(vec![1.0, -2.0, 3.0, 0.0, 0.0, -1.0, 2.0, 6.0]);
+        assert!(gains.is_ok());
+        assert_eq!(gains.unwrap()[2], 3.0);
+    }
+
+    #[test]
+    fn parse_eq_gains_rejects_wrong_count() {
+        assert!(parse_eq_gains(vec![]).is_err());
+        assert!(parse_eq_gains(vec![0.0; 7]).is_err());
+        assert!(parse_eq_gains(vec![0.0; 9]).is_err());
+    }
+}
+
+#[tauri::command]
+pub fn playback_get_eq(state: State<AppState>) -> EqSnapshot {
+    let eq = state.player.eq_state();
+    EqSnapshot { gains_db: eq.gains_db.to_vec(), enabled: eq.enabled }
 }

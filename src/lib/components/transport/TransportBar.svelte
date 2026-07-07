@@ -5,6 +5,7 @@
   import { player } from "$lib/stores/player.svelte";
   import { formatDuration } from "$lib/format";
   import StarRating from "$lib/components/rating/StarRating.svelte";
+  import Equalizer from "$lib/components/transport/Equalizer.svelte";
 
   // Looked up from the complete unfiltered list (not the artist-filtered
   // `albums`) since playback can be on an album outside whatever's
@@ -115,6 +116,7 @@
       value={player.snapshot.volume}
       oninput={onVolumeChange}
     />
+    <Equalizer />
   </div>
 </div>
 

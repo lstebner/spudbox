@@ -16,6 +16,9 @@ function createPlayerStore() {
     art_path: null,
   });
 
+  let eqGains = $state<number[]>(new Array(8).fill(0));
+  let eqEnabled = $state<boolean>(true);
+
   onPlaybackProgress((payload) => {
     snapshot = payload;
   });
@@ -24,9 +27,20 @@ function createPlayerStore() {
     snapshot = s;
   });
 
+  commands.playbackGetEq().then((eq) => {
+    eqGains = eq.gains_db;
+    eqEnabled = eq.enabled;
+  });
+
   return {
     get snapshot() {
       return snapshot;
+    },
+    get eqGains() {
+      return eqGains;
+    },
+    get eqEnabled() {
+      return eqEnabled;
     },
     playQueue(trackIds: number[], startIndex: number) {
       return commands.playbackPlayQueue(trackIds, startIndex);
@@ -45,6 +59,11 @@ function createPlayerStore() {
     },
     setVolume(volume: number) {
       return commands.playbackSetVolume(volume);
+    },
+    setEq(gains: number[], enabled: boolean) {
+      eqGains = gains;
+      eqEnabled = enabled;
+      return commands.playbackSetEq(gains, enabled);
     },
   };
 }

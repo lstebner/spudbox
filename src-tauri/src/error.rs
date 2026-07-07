@@ -12,6 +12,8 @@ pub enum AppError {
     Io(#[from] std::io::Error),
     #[error("tauri error: {0}")]
     Tauri(#[from] tauri::Error),
+    #[error("invalid argument: {0}")]
+    InvalidArgument(String),
     #[error("device error: {0}")]
     Device(String),
     #[error("cancelled")]
