@@ -24,6 +24,16 @@
     return text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
   }
 
+  // Returns 0 for an exact match, 1 for a prefix match, 2 for a substring
+  // match, or Infinity when the query doesn't appear in the text at all.
+  // Lower scores sort first so exact matches rise to the top.
+  function matchScore(normalizedText: string, normalizedQueryString: string): number {
+    if (normalizedText === normalizedQueryString) return 0;
+    if (normalizedText.startsWith(normalizedQueryString)) return 1;
+    if (normalizedText.includes(normalizedQueryString)) return 2;
+    return Infinity;
+  }
+
   const searching = $derived(query.trim().length > 0);
   const normalizedQuery = $derived(normalize(query));
 
@@ -43,13 +53,25 @@
   // While searching, an artist is visible if its own name matches or any
   // of its albums do; outside search, every artist is shown (collapsed by
   // default, toggled manually via the caret).
+  // When searching, results are sorted so exact matches appear before prefix
+  // matches, which appear before substring matches. An artist's rank is the
+  // best (lowest) score across its own name and all its album titles.
   const visibleArtists = $derived.by(() => {
     if (!searching) return library.artists;
-    return library.artists.filter((artist) => {
-      if (normalize(artist.name).includes(normalizedQuery)) return true;
-      const albums = albumsByArtist.get(artist.id) ?? [];
-      return albums.some((album) => normalize(album.title).includes(normalizedQuery));
-    });
+    const ranked = library.artists
+      .map((artist) => {
+        const artistScore = matchScore(normalize(artist.name), normalizedQuery);
+        const albums = albumsByArtist.get(artist.id) ?? [];
+        const bestAlbumScore = albums.reduce(
+          (best, album) => Math.min(best, matchScore(normalize(album.title), normalizedQuery)),
+          Infinity,
+        );
+        const score = Math.min(artistScore, bestAlbumScore);
+        return { artist, score };
+      })
+      .filter(({ score }) => score < Infinity);
+    ranked.sort((a, b) => a.score - b.score);
+    return ranked.map(({ artist }) => artist);
   });
 
   function isExpanded(artistId: number): boolean {
@@ -57,13 +79,18 @@
   }
 
   // When the artist itself matched by name, show all its albums; when it
-  // only matched because one of its albums did, show just the matches.
+  // only matched because one of its albums did, show just the matches,
+  // sorted so exact/prefix matches appear before substring matches.
   function visibleAlbumsFor(artistId: number, artistName: string): AlbumRow[] {
     const albums = albumsByArtist.get(artistId) ?? [];
     if (!searching || normalize(artistName).includes(normalizedQuery)) {
       return albums;
     }
-    return albums.filter((album) => normalize(album.title).includes(normalizedQuery));
+    const matched = albums
+      .map((album) => ({ album, score: matchScore(normalize(album.title), normalizedQuery) }))
+      .filter(({ score }) => score < Infinity);
+    matched.sort((a, b) => a.score - b.score);
+    return matched.map(({ album }) => album);
   }
 </script>
 
