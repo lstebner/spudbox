@@ -16,6 +16,7 @@
   const GAIN_EPSILON = 0.01;
 
   const PRESETS: Record<string, number[]> = {
+    Custom:        [],
     Flat:          [ 0,  0,  0,  0,  0,  0,  0,  0],
     "Bass Boost":  [ 8,  5,  2,  0,  0,  0,  0,  0],
     "Treble Boost":[ 0,  0,  0,  0,  0,  2,  5,  8],
@@ -155,10 +156,6 @@
     player.setEq(newGains, player.eqEnabled);
   }
 
-  function flatten() {
-    player.setEq(new Array(8).fill(0), player.eqEnabled);
-  }
-
   function clickOutside(node: HTMLElement) {
     function onMouseDown(event: MouseEvent) {
       if (!node.contains(event.target as Node)) open = false;
@@ -186,20 +183,6 @@
 
   {#if open}
     <div class="eq-popover" role="dialog" aria-label="Equalizer settings">
-      <select
-        class="preset-select"
-        value={currentPreset}
-        onchange={(e) => applyPreset((e.target as HTMLSelectElement).value)}
-        aria-label="EQ preset"
-      >
-        <option value="Custom">Custom</option>
-        <optgroup label="Presets">
-          {#each PRESET_NAMES as name}
-            <option value={name}>{name}</option>
-          {/each}
-        </optgroup>
-      </select>
-
       <div class="curve-area" class:disabled={!player.eqEnabled}>
         <svg
           viewBox="0 0 {SVG_WIDTH} {SVG_HEIGHT}"
@@ -245,7 +228,18 @@
           />
           Enabled
         </label>
-        <button class="flat-button" onclick={flatten}>Flat</button>
+        <div class="preset-wrapper">
+          <select
+            class="preset-select"
+            value={currentPreset}
+            onchange={(e) => applyPreset((e.target as HTMLSelectElement).value)}
+            aria-label="EQ preset"
+          >
+            {#each PRESET_NAMES as name}
+              <option value={name}>{name}</option>
+            {/each}
+          </select>
+        </div>
       </div>
     </div>
   {/if}
@@ -291,17 +285,6 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
-  }
-
-  .preset-select {
-    width: 100%;
-    font-size: 1rem;
-    color: var(--text-primary);
-    background: var(--bg-base);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 4px 8px;
-    cursor: pointer;
   }
 
   .curve-area {
@@ -401,9 +384,27 @@
     align-self: center;
   }
 
-  .flat-button {
+  .preset-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .preset-wrapper::after {
+    content: "▾";
+    position: absolute;
+    right: 6px;
+    pointer-events: none;
+    color: var(--text-secondary);
+    line-height: 1;
+  }
+
+  .preset-select {
+    -webkit-appearance: none;
+    appearance: none;
     font-size: 1rem;
-    padding: 2px 8px;
+    font-family: inherit;
+    padding: 2px 24px 2px 8px;
     background: var(--bg-hover);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
@@ -411,7 +412,7 @@
     cursor: pointer;
   }
 
-  .flat-button:hover {
+  .preset-select:hover {
     color: var(--text-primary);
     background: var(--bg-selected);
   }
