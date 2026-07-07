@@ -1,9 +1,11 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { SlidersVertical } from "@lucide/svelte";
   import { player } from "$lib/stores/player.svelte";
 
   const BAND_FREQUENCIES = [63, 125, 250, 500, 1000, 2000, 4000, 8000];
   const BAND_LABELS = ["63", "125", "250", "500", "1k", "2k", "4k", "8k"];
+  const BAND_COUNT = BAND_FREQUENCIES.length;
   const MAX_GAIN_DB = 12;
   const EQ_Q = 1.414;
   const DISPLAY_SAMPLE_RATE = 48000;
@@ -30,6 +32,7 @@
 
   function matchPreset(gains: number[]): string | null {
     for (const [name, presetGains] of Object.entries(PRESETS)) {
+      if (name === "Custom") continue;
       if (gains.every((g, i) => Math.abs(g - presetGains[i]) < GAIN_EPSILON)) {
         return name;
       }
@@ -40,7 +43,10 @@
   let open = $state(false);
   let presetOpen = $state(false);
   let currentPreset = $state<string>("Custom");
-  let customGains = $state<number[]>(new Array(8).fill(0));
+  let customGains = $state<number[]>(new Array(BAND_COUNT).fill(0));
+  let focusedOptionIndex = $state(0);
+  let optionElements: (HTMLButtonElement | null)[] = [];
+  let presetButtonElement = $state<HTMLButtonElement | null>(null);
 
   $effect(() => {
     const matched = matchPreset(player.eqGains);
@@ -59,6 +65,51 @@
       player.setEq([...PRESETS[name]], player.eqEnabled);
     }
     presetOpen = false;
+    presetButtonElement?.focus();
+  }
+
+  async function openPresetList() {
+    presetOpen = true;
+    focusedOptionIndex = Math.max(0, PRESET_NAMES.indexOf(currentPreset));
+    await tick();
+    optionElements[focusedOptionIndex]?.focus();
+  }
+
+  function handleListKeydown(event: KeyboardEvent) {
+    switch (event.key) {
+      case "ArrowDown":
+        event.preventDefault();
+        focusedOptionIndex = (focusedOptionIndex + 1) % PRESET_NAMES.length;
+        optionElements[focusedOptionIndex]?.focus();
+        break;
+      case "ArrowUp":
+        event.preventDefault();
+        focusedOptionIndex =
+          (focusedOptionIndex - 1 + PRESET_NAMES.length) % PRESET_NAMES.length;
+        optionElements[focusedOptionIndex]?.focus();
+        break;
+      case "Home":
+        event.preventDefault();
+        focusedOptionIndex = 0;
+        optionElements[0]?.focus();
+        break;
+      case "End":
+        event.preventDefault();
+        focusedOptionIndex = PRESET_NAMES.length - 1;
+        optionElements[PRESET_NAMES.length - 1]?.focus();
+        break;
+      case "Escape":
+        presetOpen = false;
+        presetButtonElement?.focus();
+        break;
+    }
+  }
+
+  function handleButtonKeydown(event: KeyboardEvent) {
+    if ((event.key === "ArrowDown" || event.key === "ArrowUp") && !presetOpen) {
+      event.preventDefault();
+      openPresetList();
+    }
   }
 
   function closePresetOnOutsideClick(node: HTMLElement) {
@@ -238,10 +289,20 @@
           />
           Enabled
         </label>
-        <div class="preset-wrapper" use:closePresetOnOutsideClick>
+        <div
+          class="preset-wrapper"
+          use:closePresetOnOutsideClick
+          onfocusout={(e) => {
+            if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node | null)) {
+              presetOpen = false;
+            }
+          }}
+        >
           <button
+            bind:this={presetButtonElement}
             class="preset-button"
-            onclick={() => (presetOpen = !presetOpen)}
+            onclick={() => (presetOpen ? (presetOpen = false) : openPresetList())}
+            onkeydown={handleButtonKeydown}
             aria-haspopup="listbox"
             aria-expanded={presetOpen}
           >
@@ -249,18 +310,26 @@
             <span aria-hidden="true">{presetOpen ? "▴" : "▾"}</span>
           </button>
           {#if presetOpen}
-            <ul class="preset-list" role="listbox" aria-label="EQ preset">
-              {#each PRESET_NAMES as name}
-                <li role="option" aria-selected={name === currentPreset}>
-                  <button
-                    class:selected={name === currentPreset}
-                    onclick={() => applyPreset(name)}
-                  >
-                    {name}
-                  </button>
-                </li>
+            <div
+              class="preset-list"
+              role="listbox"
+              aria-label="EQ preset"
+              tabindex="-1"
+              onkeydown={handleListKeydown}
+            >
+              {#each PRESET_NAMES as name, i}
+                <button
+                  role="option"
+                  aria-selected={name === currentPreset}
+                  tabindex="-1"
+                  bind:this={optionElements[i]}
+                  class:selected={name === currentPreset}
+                  onclick={() => applyPreset(name)}
+                >
+                  {name}
+                </button>
               {/each}
-            </ul>
+            </div>
           {/if}
         </div>
       </div>
@@ -445,7 +514,7 @@
     z-index: 101;
   }
 
-  .preset-list li button {
+  .preset-list button {
     display: block;
     width: 100%;
     text-align: left;
@@ -460,9 +529,11 @@
     white-space: nowrap;
   }
 
-  .preset-list li button:hover,
-  .preset-list li button.selected {
+  .preset-list button:hover,
+  .preset-list button:focus,
+  .preset-list button.selected {
     background: var(--bg-hover);
     color: var(--text-primary);
+    outline: none;
   }
 </style>

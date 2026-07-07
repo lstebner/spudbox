@@ -90,17 +90,40 @@ pub struct EqSnapshot {
     enabled: bool,
 }
 
+fn parse_eq_gains(gains_db: Vec<f32>) -> Result<[f32; EQ_BAND_COUNT], AppError> {
+    gains_db
+        .try_into()
+        .map_err(|_| AppError::InvalidArgument(format!("expected {EQ_BAND_COUNT} EQ band gains")))
+}
+
 #[tauri::command]
 pub fn playback_set_eq(
     state: State<AppState>,
     gains_db: Vec<f32>,
     enabled: bool,
-) -> Result<(), String> {
-    let gains: [f32; EQ_BAND_COUNT] = gains_db
-        .try_into()
-        .map_err(|_| format!("expected {EQ_BAND_COUNT} EQ band gains"))?;
+) -> Result<(), AppError> {
+    let gains = parse_eq_gains(gains_db)?;
     state.player.send(PlayerCommand::SetEq(gains, enabled));
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_eq_gains_accepts_exactly_eight_values() {
+        let gains = parse_eq_gains(vec![1.0, -2.0, 3.0, 0.0, 0.0, -1.0, 2.0, 6.0]);
+        assert!(gains.is_ok());
+        assert_eq!(gains.unwrap()[2], 3.0);
+    }
+
+    #[test]
+    fn parse_eq_gains_rejects_wrong_count() {
+        assert!(parse_eq_gains(vec![]).is_err());
+        assert!(parse_eq_gains(vec![0.0; 7]).is_err());
+        assert!(parse_eq_gains(vec![0.0; 9]).is_err());
+    }
 }
 
 #[tauri::command]
