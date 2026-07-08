@@ -7,6 +7,7 @@
   import TransportBar from "$lib/components/transport/TransportBar.svelte";
   import SettingsPanel from "$lib/components/settings/SettingsPanel.svelte";
   import DeviceSyncPanel from "$lib/components/device/DeviceSyncPanel.svelte";
+  import NowPlayingDrawer from "$lib/components/nowplaying/NowPlayingDrawer.svelte";
   import { library } from "$lib/stores/library.svelte";
   import { player } from "$lib/stores/player.svelte";
   import { ui, type AlbumSort } from "$lib/stores/ui.svelte";
@@ -112,6 +113,7 @@
   <footer class="transport-bar">
     <TransportBar />
   </footer>
+  <NowPlayingDrawer />
 </div>
 
 <style>

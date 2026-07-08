@@ -4,6 +4,7 @@ function createUiStore() {
   let showSettings = $state(false);
   let showDeviceSync = $state(false);
   let albumSort = $state<AlbumSort>('date_added');
+  let nowPlayingDrawerOpen = $state(false);
 
   return {
     get showSettings() {
@@ -14,6 +15,9 @@ function createUiStore() {
     },
     get albumSort() {
       return albumSort;
+    },
+    get nowPlayingDrawerOpen() {
+      return nowPlayingDrawerOpen;
     },
     openSettings() {
       showSettings = true;
@@ -31,6 +35,12 @@ function createUiStore() {
     },
     setAlbumSort(sort: AlbumSort) {
       albumSort = sort;
+    },
+    openNowPlayingDrawer() {
+      nowPlayingDrawerOpen = true;
+    },
+    closeNowPlayingDrawer() {
+      nowPlayingDrawerOpen = false;
     },
   };
 }
