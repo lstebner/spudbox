@@ -101,10 +101,13 @@ pub fn upsert(
     Ok(id)
 }
 
-/// Albums that have never had art extraction attempted (`art_source` is
-/// only ever NULL before the first attempt, then 'embedded'/'folder'/'none').
+/// Albums lacking cached art: never attempted (`art_source IS NULL`), or
+/// previously attempted and found nothing (`art_source = 'none'`). The
+/// latter must be retried on every scan rather than cached permanently,
+/// since a folder cover image can be added to an album's directory after
+/// it was first scanned.
 pub fn list_missing_art(conn: &Connection) -> Result<Vec<i64>, AppError> {
-    let mut stmt = conn.prepare("SELECT id FROM albums WHERE art_source IS NULL")?;
+    let mut stmt = conn.prepare("SELECT id FROM albums WHERE art_source IS NULL OR art_source = 'none'")?;
     let rows = stmt.query_map([], |row| row.get::<_, i64>(0))?;
     rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
 }
@@ -297,6 +300,23 @@ mod tests {
         assert_eq!(list_missing_art(&conn).unwrap(), Vec::<i64>::new());
         let rows = list_all(&conn, None, false).unwrap();
         assert_eq!(rows[0].art_path.as_deref(), Some("/cache/art/1.jpg"));
+    }
+
+    #[test]
+    fn albums_previously_found_to_have_no_art_are_retried_on_the_next_scan() {
+        let conn = test_connection();
+        let artist_id = artists::upsert(&conn, "Thrice").unwrap();
+        let album_id = upsert(&conn, "Vheissu", artist_id, Some(2005)).unwrap();
+        insert_active_track(&conn, "/music/vheissu.flac", artist_id, album_id);
+
+        set_art(&conn, album_id, None, "none").unwrap();
+
+        assert_eq!(
+            list_missing_art(&conn).unwrap(),
+            vec![album_id],
+            "a cover image may have been added to the album folder since the last scan, so \
+             albums with no art found previously must be re-checked rather than skipped forever"
+        );
     }
 
     #[test]
