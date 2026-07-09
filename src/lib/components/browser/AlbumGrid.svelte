@@ -248,10 +248,13 @@
     left: 8px;
     background: var(--accent);
     color: var(--accent-contrast);
-    font-size: 1em;
+    /* Deliberate exception to the project's 1em text-size floor: this is a
+     * tiny decorative corner pill, not reading content, and a full 1em
+     * label overwhelmed the album art it sits on top of. */
+    font-size: 0.62em;
     font-weight: 700;
-    letter-spacing: 0.05em;
-    padding: 2px 6px;
+    letter-spacing: 0.07em;
+    padding: 3px 8px;
     border-radius: var(--radius-sm);
     pointer-events: none;
     text-transform: uppercase;
