@@ -140,7 +140,7 @@
     position: fixed;
     inset: 0;
     z-index: 150;
-    background: rgba(0, 0, 0, 0.4);
+    background: var(--scrim-weak);
   }
 
   .drawer {

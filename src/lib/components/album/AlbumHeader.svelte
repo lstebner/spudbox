@@ -117,7 +117,7 @@
     position: fixed;
     inset: 0;
     z-index: 200;
-    background: rgba(0, 0, 0, 0.85);
+    background: var(--scrim-heavy);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -128,12 +128,12 @@
     position: absolute;
     top: 1em;
     right: 1em;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--scrim-medium);
     border: none;
     border-radius: 50%;
     width: 36px;
     height: 36px;
-    color: #fff;
+    color: var(--on-scrim);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -141,7 +141,7 @@
   }
 
   .art-modal-close:hover {
-    background: rgba(0, 0, 0, 0.8);
+    background: var(--scrim-strong);
   }
 
   .art-modal-img {

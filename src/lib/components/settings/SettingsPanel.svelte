@@ -248,8 +248,8 @@
   }
 
   .remove-btn:hover:not(:disabled) {
-    background: #3a1a1a;
-    color: #e07070;
+    background: var(--danger-bg);
+    color: var(--danger);
   }
 
   .row {
@@ -300,7 +300,7 @@
   button.primary {
     background: var(--accent);
     border-color: var(--accent);
-    color: #fff;
+    color: var(--accent-contrast);
   }
 
   button.primary:hover:not(:disabled) {
@@ -323,8 +323,8 @@
   }
 
   .badge.ok {
-    background: #1a3a1a;
-    color: #6fcf6f;
+    background: var(--success-bg);
+    color: var(--success);
   }
 
   .badge.off {
@@ -385,6 +385,6 @@
   }
 
   .message.error {
-    color: #e07070;
+    color: var(--danger);
   }
 </style>

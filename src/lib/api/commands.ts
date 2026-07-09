@@ -49,4 +49,7 @@ export const commands = {
     invoke<DeviceSyncResult>("device_perform_sync", { musicSubfolder, mode, preview }),
   deviceCancelSync: () => invoke<void>("device_cancel_sync"),
   deviceCancelPreview: () => invoke<void>("device_cancel_preview"),
+
+  appearanceGetTheme: () => invoke<string>("appearance_get_theme"),
+  appearanceSetTheme: (theme: string) => invoke<void>("appearance_set_theme", { theme }),
 };

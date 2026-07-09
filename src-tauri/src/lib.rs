@@ -104,7 +104,9 @@ pub fn run() {
             commands::device::device_preview_sync,
             commands::device::device_perform_sync,
             commands::device::device_cancel_sync,
-            commands::device::device_cancel_preview
+            commands::device::device_cancel_preview,
+            commands::appearance::appearance_get_theme,
+            commands::appearance::appearance_set_theme
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

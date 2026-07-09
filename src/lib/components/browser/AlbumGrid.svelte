@@ -182,7 +182,7 @@
     background: var(--accent);
     border: none;
     border-radius: var(--radius);
-    color: #fff;
+    color: var(--accent-contrast);
     cursor: pointer;
     padding: 0.5em 1.25em;
     font-size: 1em;
@@ -239,7 +239,7 @@
     overflow: hidden;
     background: var(--bg-hover);
     margin-bottom: 0.5em;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 2px 8px var(--scrim-weak);
   }
 
   .new-badge {
@@ -247,7 +247,7 @@
     top: 8px;
     left: 8px;
     background: var(--accent);
-    color: #fff;
+    color: var(--accent-contrast);
     font-size: 0.62em;
     font-weight: 700;
     letter-spacing: 0.07em;
@@ -255,7 +255,7 @@
     border-radius: var(--radius-sm);
     pointer-events: none;
     text-transform: uppercase;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 1px 4px var(--scrim-weak);
     z-index: 1;
   }
 
@@ -266,10 +266,10 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.55);
+    background: var(--scrim-medium);
     border: none;
     border-radius: var(--radius-sm);
-    color: rgba(255, 255, 255, 0.9);
+    color: var(--on-scrim-muted);
     cursor: pointer;
     padding: 4px;
     opacity: 0;
@@ -277,8 +277,8 @@
   }
 
   .hide-toggle:hover {
-    background: rgba(0, 0, 0, 0.75);
-    color: #fff;
+    background: var(--scrim-strong);
+    color: var(--on-scrim);
   }
 
   .album-wrap:hover .hide-toggle {
