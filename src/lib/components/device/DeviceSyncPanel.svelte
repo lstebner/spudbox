@@ -420,8 +420,8 @@
   }
 
   .badge.connected {
-    background: #1a3a1a;
-    color: #6fcf6f;
+    background: var(--success-bg);
+    color: var(--success);
   }
 
   .label {
@@ -472,7 +472,7 @@
 
   .folder-option.selected {
     border-color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 10%, var(--bg-hover));
+    background: var(--accent-tint);
   }
 
   .folder-option input[type="radio"] {
@@ -537,7 +537,7 @@
   button.primary {
     background: var(--accent);
     border-color: var(--accent);
-    color: #fff;
+    color: var(--accent-contrast);
   }
 
   button.primary:hover:not(:disabled) {
@@ -558,21 +558,21 @@
   }
 
   button.destructive {
-    border-color: #8b2020;
-    color: #e07070;
+    border-color: var(--danger-border);
+    color: var(--danger);
   }
 
   button.destructive:hover:not(:disabled) {
-    background: #3a1a1a;
-    border-color: #e07070;
-    color: #f09090;
+    background: var(--danger-bg-strong);
+    border-color: var(--danger);
+    color: var(--danger);
   }
 
   .space-warning {
-    background: #3a2a10;
-    border: 1px solid #8b6020;
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-border);
     border-radius: var(--radius);
-    color: #d4a040;
+    color: var(--warning);
     padding: 0.75em 1em;
     line-height: 1.5;
   }
@@ -602,8 +602,8 @@
     line-height: 1;
   }
 
-  .change-icon.add { color: #6fcf6f; }
-  .change-icon.remove { color: #e07070; }
+  .change-icon.add { color: var(--success); }
+  .change-icon.remove { color: var(--danger); }
   .change-icon.done { color: var(--text-tertiary); display: flex; align-items: center; justify-content: center; }
 
   .change-item.done {
@@ -639,8 +639,8 @@
     font-size: 1em;
   }
 
-  .message.error { color: #e07070; }
-  .message.success { color: #6fcf6f; }
+  .message.error { color: var(--danger); }
+  .message.success { color: var(--success); }
 
   .progress-label {
     margin: 0;

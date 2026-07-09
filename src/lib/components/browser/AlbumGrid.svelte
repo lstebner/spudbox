@@ -20,7 +20,7 @@
   // Sized for 3 text lines (title + subtitle + rating row); always reserve
   // the rating row's height even for unrated albums so every card in the
   // virtualizer is the same height regardless of rating state.
-  const TEXT_HEIGHT = 62;
+  const TEXT_HEIGHT = 66;
 
   let scrollEl: HTMLDivElement | undefined = $state();
   let containerWidth = $state(0);
@@ -182,7 +182,7 @@
     background: var(--accent);
     border: none;
     border-radius: var(--radius);
-    color: #fff;
+    color: var(--accent-contrast);
     cursor: pointer;
     padding: 0.5em 1.25em;
     font-size: 1em;
@@ -239,7 +239,7 @@
     overflow: hidden;
     background: var(--bg-hover);
     margin-bottom: 0.5em;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 2px 8px var(--scrim-weak);
   }
 
   .new-badge {
@@ -247,7 +247,10 @@
     top: 8px;
     left: 8px;
     background: var(--accent);
-    color: #fff;
+    color: var(--accent-contrast);
+    /* Deliberate exception to the project's 1em text-size floor: this is a
+     * tiny decorative corner pill, not reading content, and a full 1em
+     * label overwhelmed the album art it sits on top of. */
     font-size: 0.62em;
     font-weight: 700;
     letter-spacing: 0.07em;
@@ -255,7 +258,7 @@
     border-radius: var(--radius-sm);
     pointer-events: none;
     text-transform: uppercase;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 1px 4px var(--scrim-weak);
     z-index: 1;
   }
 
@@ -266,19 +269,25 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.55);
+    background: var(--scrim-medium);
     border: none;
     border-radius: var(--radius-sm);
-    color: rgba(255, 255, 255, 0.9);
+    color: var(--on-scrim-muted);
     cursor: pointer;
     padding: 4px;
     opacity: 0;
     transition: opacity 0.15s;
+    /* Pre-promotes this to its own compositing layer so toggling its
+     * opacity on hover doesn't force WebKitGTK to switch the whole
+     * window's text antialiasing mode for one frame — invisible against
+     * a dark background, but a visible bold/thin flash across every
+     * album's text against a light one. */
+    will-change: opacity;
   }
 
   .hide-toggle:hover {
-    background: rgba(0, 0, 0, 0.75);
-    color: #fff;
+    background: var(--scrim-strong);
+    color: var(--on-scrim);
   }
 
   .album-wrap:hover .hide-toggle {
@@ -299,8 +308,8 @@
   }
 
   .title {
-    font-weight: 600;
-    font-size: 0.9em;
+    font-weight: 500;
+    font-size: 1em;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -308,7 +317,7 @@
 
   .subtitle {
     color: var(--text-secondary);
-    font-size: 0.9em;
+    font-size: 1em;
     margin-top: 2px;
     overflow: hidden;
     text-overflow: ellipsis;

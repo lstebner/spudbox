@@ -1,4 +1,30 @@
+/*
+ * Token architecture and the rules for adding/choosing a theme live in
+ * docs/DESIGN_SYSTEM.md. Components should only ever reference a token
+ * here, never a literal color — that's what makes a new theme a
+ * this-file-only change.
+ */
+
 :root {
+  /* Structural tokens — shared by every theme, not part of visual identity. */
+  --radius-sm: 4px;
+  --radius: 8px;
+  --sidebar-width: 240px;
+  --transport-height: 88px;
+  --toolbar-height: 40px;
+
+  /* Media scrims: dimming overlays on top of photographic album art and
+   * modal backdrops. Intentionally theme-invariant — see DESIGN_SYSTEM.md. */
+  --scrim-weak: rgba(0, 0, 0, 0.4);
+  --scrim-medium: rgba(0, 0, 0, 0.55);
+  --scrim-strong: rgba(0, 0, 0, 0.75);
+  --scrim-heavy: rgba(0, 0, 0, 0.85);
+  --on-scrim: #fff;
+  --on-scrim-muted: rgba(255, 255, 255, 0.9);
+
+  /* Default theme (applied before the frontend has read the saved
+   * preference and stamped data-theme onto <html>) — identical to
+   * [data-theme="dark"] below. */
   --bg-base: #121214;
   --bg-elevated: #19191c;
   --bg-hover: #232327;
@@ -9,11 +35,118 @@
   --text-tertiary: #6b6b70;
   --accent: #818cf8;
   --accent-hover: #9499fa;
-  --radius-sm: 4px;
-  --radius: 8px;
-  --sidebar-width: 240px;
-  --transport-height: 88px;
-  --toolbar-height: 40px;
+  --accent-contrast: #ffffff;
+  --success: #6fcf6f;
+  --danger: #e07070;
+  --warning: #d4a040;
+
+  /* Derived status backgrounds/borders — computed once, from whichever
+   * theme's --success/--danger/--warning and --bg-elevated are active.
+   * See "Deriving tinted status backgrounds/borders" in DESIGN_SYSTEM.md. */
+  --success-bg: color-mix(in srgb, var(--success) 18%, var(--bg-elevated));
+  --success-border: color-mix(in srgb, var(--success) 45%, var(--bg-elevated));
+  --danger-bg: color-mix(in srgb, var(--danger) 18%, var(--bg-elevated));
+  --danger-bg-strong: color-mix(in srgb, var(--danger) 30%, var(--bg-elevated));
+  --danger-border: color-mix(in srgb, var(--danger) 55%, var(--bg-elevated));
+  --warning-bg: color-mix(in srgb, var(--warning) 18%, var(--bg-elevated));
+  --warning-border: color-mix(in srgb, var(--warning) 45%, var(--bg-elevated));
+  --accent-tint: color-mix(in srgb, var(--accent) 10%, var(--bg-hover));
+}
+
+:root[data-theme="dark"] {
+  --bg-base: #121214;
+  --bg-elevated: #19191c;
+  --bg-hover: #232327;
+  --bg-selected: #2a2a30;
+  --border: #2a2a2e;
+  --text-primary: #f2f2f3;
+  --text-secondary: #95959c;
+  --text-tertiary: #6b6b70;
+  --accent: #818cf8;
+  --accent-hover: #9499fa;
+  --accent-contrast: #ffffff;
+  --success: #6fcf6f;
+  --danger: #e07070;
+  --warning: #d4a040;
+}
+
+:root[data-theme="light"] {
+  --bg-base: #f2f2f4;
+  --bg-elevated: #ffffff;
+  --bg-hover: #e6e6ea;
+  --bg-selected: #d8d8df;
+  --border: #dcdce1;
+  --text-primary: #1a1a1c;
+  --text-secondary: #68686f;
+  --text-tertiary: #88888f;
+  --accent: #5b5fd6;
+  --accent-hover: #4a4ec2;
+  --accent-contrast: #ffffff;
+  --success: #1f7a41;
+  --danger: #c33d3d;
+  --warning: #8a5f10;
+}
+
+:root[data-theme="green"] {
+  /* Neutrals carry the accent's own hue (H145) at a low, elevation-ramped
+   * saturation rather than reusing `dark`'s neutral gray — see "Tinting a
+   * colored theme's neutrals" in DESIGN_SYSTEM.md. Lightness matches `dark`
+   * exactly so every contrast ratio below is unchanged from the neutral
+   * version. */
+  --bg-base: #0d1410;
+  --bg-elevated: #14211a;
+  --bg-hover: #1d3728;
+  --bg-selected: #224932;
+  --border: #21402e;
+  --text-primary: #f3f4f3;
+  --text-secondary: #90a79a;
+  --text-tertiary: #5c846d;
+  --accent: #78b08b;
+  --accent-hover: #8bbb9b;
+  --accent-contrast: #15151a;
+  /* Shifted toward emerald/teal so a "connected" badge doesn't read as
+   * just another shade of this theme's own sage-green accent. */
+  --success: #5bc7a0;
+  --danger: #e07070;
+  --warning: #d4a040;
+}
+
+:root[data-theme="purple"] {
+  /* Neutrals tinted to H278 — see the `green` theme's comment above. */
+  --bg-base: #110d14;
+  --bg-elevated: #1c1421;
+  --bg-hover: #2d1d37;
+  --bg-selected: #3b2249;
+  --border: #352140;
+  --text-primary: #f4f3f4;
+  --text-secondary: #9f90a7;
+  --text-tertiary: #765c84;
+  --accent: #a478ba;
+  --accent-hover: #b18bc4;
+  --accent-contrast: #15151a;
+  --success: #6fcf6f;
+  --danger: #e07070;
+  --warning: #d4a040;
+}
+
+:root[data-theme="yellow"] {
+  /* Neutrals tinted to H40 — see the `green` theme's comment above. */
+  --bg-base: #14120d;
+  --bg-elevated: #211d14;
+  --bg-hover: #372e1d;
+  --bg-selected: #493c22;
+  --border: #403621;
+  --text-primary: #f4f4f3;
+  --text-secondary: #a7a090;
+  --text-tertiary: #84775c;
+  --accent: #bf9040;
+  --accent-hover: #c8a05b;
+  --accent-contrast: #15151a;
+  --success: #6fcf6f;
+  --danger: #e07070;
+  /* Shifted toward orange so caution warnings don't read as this theme's
+   * own ochre accent. */
+  --warning: #e08a55;
 }
 
 * {
