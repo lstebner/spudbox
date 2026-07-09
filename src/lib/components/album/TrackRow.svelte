@@ -72,7 +72,6 @@
 
   .col-duration {
     color: var(--text-secondary);
-    font-size: 0.85em;
     flex-shrink: 0;
   }
 </style>
