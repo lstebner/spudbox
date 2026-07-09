@@ -20,7 +20,7 @@
   // Sized for 3 text lines (title + subtitle + rating row); always reserve
   // the rating row's height even for unrated albums so every card in the
   // virtualizer is the same height regardless of rating state.
-  const TEXT_HEIGHT = 62;
+  const TEXT_HEIGHT = 66;
 
   let scrollEl: HTMLDivElement | undefined = $state();
   let containerWidth = $state(0);
@@ -248,10 +248,10 @@
     left: 8px;
     background: var(--accent);
     color: var(--accent-contrast);
-    font-size: 0.62em;
+    font-size: 1em;
     font-weight: 700;
-    letter-spacing: 0.07em;
-    padding: 3px 8px;
+    letter-spacing: 0.05em;
+    padding: 2px 6px;
     border-radius: var(--radius-sm);
     pointer-events: none;
     text-transform: uppercase;
@@ -305,8 +305,8 @@
   }
 
   .title {
-    font-weight: 600;
-    font-size: 0.9em;
+    font-weight: 500;
+    font-size: 1em;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -314,7 +314,7 @@
 
   .subtitle {
     color: var(--text-secondary);
-    font-size: 0.9em;
+    font-size: 1em;
     margin-top: 2px;
     overflow: hidden;
     text-overflow: ellipsis;
