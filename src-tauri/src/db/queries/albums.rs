@@ -3,6 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{params, OptionalExtension, Connection};
 use serde::Serialize;
 
+use crate::db::queries::artists::ARTIST_NAME_ORDER_BY;
 use crate::error::AppError;
 
 const NEW_ALBUM_THRESHOLD_SECS: i64 = 5 * 86_400;
@@ -51,7 +52,7 @@ pub fn list_all(
              LEFT JOIN album_ratings art ON art.album_id = al.id
              WHERE (?1 IS NULL OR al.album_artist_id = ?1)
                AND EXISTS (SELECT 1 FROM tracks WHERE album_id = al.id AND is_archived = 0)
-             ORDER BY ar.sort_name, ar.name, al.year, al.title"
+             ORDER BY {ARTIST_NAME_ORDER_BY}, al.year, al.title"
         )
     } else {
         format!(
@@ -64,7 +65,7 @@ pub fn list_all(
              WHERE ha.album_id IS NULL
                AND (?1 IS NULL OR al.album_artist_id = ?1)
                AND EXISTS (SELECT 1 FROM tracks WHERE album_id = al.id AND is_archived = 0)
-             ORDER BY ar.sort_name, ar.name, al.year, al.title"
+             ORDER BY {ARTIST_NAME_ORDER_BY}, al.year, al.title"
         )
     };
     let mut stmt = conn.prepare(&sql)?;
