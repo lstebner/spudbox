@@ -274,6 +274,12 @@
     padding: 4px;
     opacity: 0;
     transition: opacity 0.15s;
+    /* Pre-promotes this to its own compositing layer so toggling its
+     * opacity on hover doesn't force WebKitGTK to switch the whole
+     * window's text antialiasing mode for one frame — invisible against
+     * a dark background, but a visible bold/thin flash across every
+     * album's text against a light one. */
+    will-change: opacity;
   }
 
   .hide-toggle:hover {
