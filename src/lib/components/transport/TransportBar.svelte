@@ -8,11 +8,12 @@
   import StarRating from "$lib/components/rating/StarRating.svelte";
   import Equalizer from "$lib/components/transport/Equalizer.svelte";
 
-  // Looked up from the complete unfiltered list (not the artist-filtered
-  // `albums`) since playback can be on an album outside whatever's
-  // currently browsed — same reasoning the now-playing drawer uses.
+  // Looked up via findAlbumById (checks hidden albums too, not just the
+  // artist-filtered `albums`) since playback can be on an album outside
+  // whatever's currently browsed, or one the user has since hidden — same
+  // reasoning the now-playing drawer uses.
   const currentAlbum = $derived(
-    library.allAlbums.find((a) => a.id === player.snapshot.album_id) ?? null,
+    player.snapshot.album_id !== null ? library.findAlbumById(player.snapshot.album_id) : null,
   );
 
   function openNowPlayingDrawer() {

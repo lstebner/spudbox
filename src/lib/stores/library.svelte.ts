@@ -66,6 +66,18 @@ function createLibraryStore() {
     await selectAlbum(albumId);
   }
 
+  // Checks `hiddenAlbums` too, unlike a plain `allAlbums.find(...)` — needed
+  // anywhere an album is looked up by id outside of the main browsing flow
+  // (e.g. the now-playing bar/drawer), since playback can point at an
+  // album the user has since hidden, and `allAlbums` excludes those.
+  function findAlbumById(albumId: number): AlbumRow | null {
+    return (
+      allAlbums.find((a) => a.id === albumId) ??
+      hiddenAlbums.find((a) => a.id === albumId) ??
+      null
+    );
+  }
+
   async function selectHidden() {
     isViewingHidden = true;
     selectedArtistId = null;
@@ -172,6 +184,7 @@ function createLibraryStore() {
     get hasRoots() {
       return hasRoots;
     },
+    findAlbumById,
     selectArtist,
     selectAlbum,
     selectArtistAndAlbum,

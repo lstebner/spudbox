@@ -1,44 +1,84 @@
 <script lang="ts">
   import { fade, fly } from "svelte/transition";
-  import { convertFileSrc } from "@tauri-apps/api/core";
-  import { Play, X } from "@lucide/svelte";
+  import { X } from "@lucide/svelte";
   import { commands } from "$lib/api/commands";
   import { library } from "$lib/stores/library.svelte";
   import { player } from "$lib/stores/player.svelte";
   import { ui } from "$lib/stores/ui.svelte";
-  import { formatDuration } from "$lib/format";
-  import type { TrackRow } from "$lib/types";
-  import StarRating from "$lib/components/rating/StarRating.svelte";
+  import type { TrackRow as TrackRowData } from "$lib/types";
+  import AlbumHeader from "$lib/components/album/AlbumHeader.svelte";
+  import TrackRow from "$lib/components/album/TrackRow.svelte";
 
   const DRAWER_WIDTH_PIXELS = 420;
   const TRANSITION_DURATION_MILLISECONDS = 200;
 
-  let tracks = $state<TrackRow[]>([]);
+  const FOCUSABLE_SELECTOR =
+    'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
+  let tracks = $state<TrackRowData[]>([]);
   let artModalOpen = $state(false);
+  let drawerEl: HTMLDivElement | undefined = $state();
+  let closeButtonEl: HTMLButtonElement | undefined = $state();
+  let previouslyFocusedElement: HTMLElement | null = null;
 
   const album = $derived(
-    library.allAlbums.find((a) => a.id === player.snapshot.album_id) ?? null,
+    player.snapshot.album_id !== null ? library.findAlbumById(player.snapshot.album_id) : null,
   );
 
   const totalDurationMs = $derived(tracks.reduce((sum, t) => sum + t.duration_ms, 0));
 
+  // Gated on nowPlayingDrawerOpen so normal playback (album/track changes
+  // while the drawer is closed) never fires this IPC call in the
+  // background — only re-fetches while the drawer is actually visible.
   $effect(() => {
+    if (!ui.nowPlayingDrawerOpen) return;
     const albumId = player.snapshot.album_id;
     if (albumId === null) {
       tracks = [];
       return;
     }
+    // Guards against out-of-order resolution if album_id changes again
+    // before this fetch completes (e.g. rapid skips across an album
+    // boundary) — an older in-flight fetch must not clobber newer tracks.
     commands.libraryGetTracksByAlbum(albumId).then((newTracks) => {
-      tracks = newTracks;
+      if (player.snapshot.album_id === albumId) tracks = newTracks;
     });
   });
 
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key !== "Escape") return;
-    if (artModalOpen) {
-      artModalOpen = false;
+  $effect(() => {
+    if (ui.nowPlayingDrawerOpen) {
+      previouslyFocusedElement = document.activeElement as HTMLElement | null;
+      closeButtonEl?.focus();
     } else {
-      ui.closeNowPlayingDrawer();
+      previouslyFocusedElement?.focus();
+      previouslyFocusedElement = null;
+    }
+  });
+
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      if (artModalOpen) {
+        artModalOpen = false;
+      } else {
+        ui.closeNowPlayingDrawer();
+      }
+      return;
+    }
+    if (e.key === "Tab") trapFocus(e);
+  }
+
+  function trapFocus(e: KeyboardEvent) {
+    if (!drawerEl) return;
+    const focusables = drawerEl.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
+    if (focusables.length === 0) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
     }
   }
 
@@ -64,76 +104,32 @@
     role="dialog"
     aria-modal="true"
     aria-label="Now playing"
+    bind:this={drawerEl}
     transition:fly={{ x: DRAWER_WIDTH_PIXELS, duration: TRANSITION_DURATION_MILLISECONDS }}
   >
-    {#if artModalOpen && album?.art_path}
-      <div
-        class="art-modal"
-        role="dialog"
-        aria-modal="true"
-        tabindex="-1"
-        onclick={() => (artModalOpen = false)}
-        onkeydown={handleKeydown}
-      >
+    <AlbumHeader
+      {album}
+      {totalDurationMs}
+      onRate={(r) => {
+        if (album) library.setAlbumRating(album.id, r);
+      }}
+      bind:artModalOpen
+    >
+      {#snippet trailing()}
         <button
-          class="art-modal-close"
-          onclick={(e) => {
-            e.stopPropagation();
-            artModalOpen = false;
-          }}
-          aria-label="Close"
+          class="close"
+          bind:this={closeButtonEl}
+          onclick={() => ui.closeNowPlayingDrawer()}
+          aria-label="Close now playing panel"
         >
-          <X size={20} />
+          <X size={18} />
         </button>
-        <img src={convertFileSrc(album.art_path)} alt={album.title} class="art-modal-img" />
-      </div>
-    {/if}
-
-    <div class="header">
-      {#if album}
-        <div class="art">
-          {#if album.art_path}
-            <button
-              class="art-btn"
-              onclick={() => (artModalOpen = true)}
-              aria-label="View full artwork"
-            >
-              <img src={convertFileSrc(album.art_path)} alt={album.title} />
-            </button>
-          {:else}
-            <div class="art-placeholder"></div>
-          {/if}
-        </div>
-        <div class="text">
-          <div class="title">{album.title}</div>
-          <div class="subtitle">
-            {album.album_artist}{album.year ? ` · ${album.year}` : ""}{totalDurationMs > 0
-              ? ` · ${formatDuration(totalDurationMs)}`
-              : ""}
-          </div>
-          <div class="rating-row">
-            <StarRating rating={album.rating} size={16} onRate={(r) => library.setAlbumRating(album.id, r)} />
-          </div>
-        </div>
-      {/if}
-      <button class="close" onclick={() => ui.closeNowPlayingDrawer()} aria-label="Close now playing panel">
-        <X size={18} />
-      </button>
-    </div>
+      {/snippet}
+    </AlbumHeader>
 
     <div class="track-scroll">
       {#each tracks as t, index (t.id)}
-        <button class="track-row" class:playing={t.id === player.snapshot.track_id} onclick={() => playFrom(index)}>
-          <span class="col-no">
-            {#if t.id === player.snapshot.track_id}
-              <Play size={12} fill="currentColor" />
-            {:else}
-              {t.track_no ?? ""}
-            {/if}
-          </span>
-          <span class="col-title">{t.title}</span>
-          <span class="col-duration">{formatDuration(t.duration_ms)}</span>
-        </button>
+        <TrackRow track={t} isPlaying={t.id === player.snapshot.track_id} onclick={() => playFrom(index)} />
       {/each}
     </div>
   </div>
@@ -160,19 +156,6 @@
     border-left: 1px solid var(--border);
   }
 
-  .header {
-    display: flex;
-    align-items: flex-start;
-    gap: 1em;
-    padding: 1.5em;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .text {
-    min-width: 0;
-    flex: 1;
-  }
-
   .close {
     display: flex;
     align-items: center;
@@ -192,139 +175,9 @@
     background: var(--bg-hover);
   }
 
-  .art {
-    width: 80px;
-    height: 80px;
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-    background: var(--bg-hover);
-    flex-shrink: 0;
-  }
-
-  .art img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .art-btn {
-    display: block;
-    width: 100%;
-    height: 100%;
-    padding: 0;
-    border: none;
-    background: none;
-    cursor: zoom-in;
-  }
-
-  .art-modal {
-    position: fixed;
-    inset: 0;
-    z-index: 200;
-    background: rgba(0, 0, 0, 0.85);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: zoom-out;
-  }
-
-  .art-modal-close {
-    position: absolute;
-    top: 1em;
-    right: 1em;
-    background: rgba(0, 0, 0, 0.5);
-    border: none;
-    border-radius: 50%;
-    width: 36px;
-    height: 36px;
-    color: #fff;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .art-modal-close:hover {
-    background: rgba(0, 0, 0, 0.8);
-  }
-
-  .art-modal-img {
-    max-width: 90vw;
-    max-height: 90vh;
-    object-fit: contain;
-    border-radius: var(--radius);
-  }
-
-  .art-placeholder {
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(135deg, var(--bg-hover), var(--bg-selected));
-  }
-
-  .title {
-    font-weight: 500;
-    font-size: 1.1em;
-    overflow-wrap: break-word;
-  }
-
-  .subtitle {
-    color: var(--text-secondary);
-    font-size: 1em;
-  }
-
-  .rating-row {
-    margin-top: 0.4em;
-  }
-
   .track-scroll {
     flex: 1;
     overflow-y: auto;
     padding: 0.5em 1em;
-  }
-
-  .track-row {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 1em;
-    background: none;
-    border: none;
-    color: var(--text-primary);
-    cursor: pointer;
-    padding: 0.5em 0.75em;
-    border-radius: var(--radius-sm);
-    text-align: left;
-  }
-
-  .track-row:hover {
-    background: var(--bg-hover);
-  }
-
-  .track-row.playing {
-    background: var(--bg-selected);
-    color: var(--accent-hover);
-  }
-
-  .col-no {
-    width: 2em;
-    color: var(--text-tertiary);
-    text-align: right;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-  }
-
-  .col-title {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .col-duration {
-    color: var(--text-secondary);
-    font-size: 0.85em;
-    flex-shrink: 0;
   }
 </style>

@@ -22,6 +22,7 @@ function createUiStore() {
     openSettings() {
       showSettings = true;
       showDeviceSync = false;
+      nowPlayingDrawerOpen = false;
     },
     closeSettings() {
       showSettings = false;
@@ -29,6 +30,7 @@ function createUiStore() {
     openDeviceSync() {
       showDeviceSync = true;
       showSettings = false;
+      nowPlayingDrawerOpen = false;
     },
     closeDeviceSync() {
       showDeviceSync = false;
@@ -36,8 +38,13 @@ function createUiStore() {
     setAlbumSort(sort: AlbumSort) {
       albumSort = sort;
     },
+    // Deliberately mutually exclusive with Settings/Device Sync: the drawer
+    // is a fixed-position overlay that would otherwise visually stack on
+    // top of those panels rather than replacing them.
     openNowPlayingDrawer() {
       nowPlayingDrawerOpen = true;
+      showSettings = false;
+      showDeviceSync = false;
     },
     closeNowPlayingDrawer() {
       nowPlayingDrawerOpen = false;
