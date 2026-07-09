@@ -164,7 +164,7 @@
 
   .title {
     font-weight: 500;
-    font-size: 1.25em;
+    font-size: 1em;
     overflow-wrap: break-word;
   }
 
