@@ -3,6 +3,15 @@ use serde::Serialize;
 
 use crate::error::AppError;
 
+/// Orders by artist name (falling back to the not-yet-populated `sort_name`
+/// column when set), case-insensitively, with any name starting in a digit
+/// or symbol sorting before alphabetic names — matches how a media library
+/// is conventionally browsed, rather than SQLite's default byte-wise
+/// comparison, which sorts all uppercase letters before any lowercase one.
+pub const ARTIST_NAME_ORDER_BY: &str = "\
+    CASE WHEN COALESCE(ar.sort_name, ar.name) GLOB '[A-Za-z]*' THEN 1 ELSE 0 END, \
+    COALESCE(ar.sort_name, ar.name) COLLATE NOCASE";
+
 #[derive(Debug, Serialize)]
 pub struct ArtistRow {
     pub id: i64,
@@ -14,7 +23,7 @@ pub struct ArtistRow {
 /// artist, e.g. a one-off featured artist), since this list drives the
 /// sidebar's album-browsing navigation.
 pub fn list_album_artists(conn: &Connection) -> Result<Vec<ArtistRow>, AppError> {
-    let mut stmt = conn.prepare(
+    let sql = format!(
         "SELECT ar.id, ar.name, COUNT(al.id) as album_count
          FROM artists ar
          JOIN albums al ON al.album_artist_id = ar.id
@@ -23,8 +32,9 @@ pub fn list_album_artists(conn: &Connection) -> Result<Vec<ArtistRow>, AppError>
            AND EXISTS (SELECT 1 FROM tracks WHERE album_id = al.id AND is_archived = 0)
          GROUP BY ar.id
          HAVING COUNT(al.id) > 0
-         ORDER BY ar.sort_name, ar.name",
-    )?;
+         ORDER BY {ARTIST_NAME_ORDER_BY}"
+    );
+    let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([], |row| {
         Ok(ArtistRow {
             id: row.get(0)?,
@@ -104,6 +114,21 @@ mod tests {
         let rows = list_album_artists(&conn).unwrap();
         let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
         assert_eq!(names, vec!["Visible Artist"]);
+    }
+
+    #[test]
+    fn list_album_artists_sorts_case_insensitively_with_symbols_before_letters() {
+        let conn = test_connection();
+        let names = ["zebra", "Apple", "!!!", "banana", "3OH!3", "Aardvark"];
+        for (index, name) in names.iter().enumerate() {
+            let artist_id = upsert(&conn, name).unwrap();
+            let album_id = albums::upsert(&conn, "Album", artist_id, Some(2000 + index as i64)).unwrap();
+            insert_active_track(&conn, &format!("/music/{index}.flac"), artist_id, album_id);
+        }
+
+        let rows = list_album_artists(&conn).unwrap();
+        let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, vec!["!!!", "3OH!3", "Aardvark", "Apple", "banana", "zebra"]);
     }
 
     #[test]

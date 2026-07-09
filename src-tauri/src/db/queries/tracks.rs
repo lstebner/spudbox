@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use rusqlite::{params, Connection};
 use serde::Serialize;
 
+use crate::db::queries::artists::ARTIST_NAME_ORDER_BY;
 use crate::error::AppError;
 
 pub struct NewTrack<'a> {
@@ -250,7 +251,7 @@ pub fn list_all(conn: &Connection) -> Result<Vec<TrackRow>, AppError> {
          LEFT JOIN artists ar ON ar.id = t.track_artist_id
          LEFT JOIN albums al ON al.id = t.album_id
          WHERE t.is_archived = 0
-         ORDER BY ar.sort_name, ar.name, al.title, t.disc_no, t.track_no"
+         ORDER BY {ARTIST_NAME_ORDER_BY}, al.title, t.disc_no, t.track_no"
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([], track_row_from)?;
