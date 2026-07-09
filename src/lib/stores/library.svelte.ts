@@ -66,16 +66,16 @@ function createLibraryStore() {
     await selectAlbum(albumId);
   }
 
-  // Navigates to an album's track list regardless of the currently
-  // selected artist filter (e.g. from the now-playing bar, which can
-  // point at an album outside whatever's currently browsed) by resetting
-  // to "All Albums" first so the target album is guaranteed to be in the
-  // loaded list.
-  async function goToAlbum(albumId: number) {
-    isViewingHidden = false;
-    selectedArtistId = null;
-    await loadAlbums();
-    await selectAlbum(albumId);
+  // Checks `hiddenAlbums` too, unlike a plain `allAlbums.find(...)` — needed
+  // anywhere an album is looked up by id outside of the main browsing flow
+  // (e.g. the now-playing bar/drawer), since playback can point at an
+  // album the user has since hidden, and `allAlbums` excludes those.
+  function findAlbumById(albumId: number): AlbumRow | null {
+    return (
+      allAlbums.find((a) => a.id === albumId) ??
+      hiddenAlbums.find((a) => a.id === albumId) ??
+      null
+    );
   }
 
   async function selectHidden() {
@@ -184,10 +184,10 @@ function createLibraryStore() {
     get hasRoots() {
       return hasRoots;
     },
+    findAlbumById,
     selectArtist,
     selectAlbum,
     selectArtistAndAlbum,
-    goToAlbum,
     selectHidden,
     backToAlbums,
     setAlbumRating,

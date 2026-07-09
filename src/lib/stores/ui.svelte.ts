@@ -4,6 +4,7 @@ function createUiStore() {
   let showSettings = $state(false);
   let showDeviceSync = $state(false);
   let albumSort = $state<AlbumSort>('date_added');
+  let nowPlayingDrawerOpen = $state(false);
 
   return {
     get showSettings() {
@@ -15,9 +16,13 @@ function createUiStore() {
     get albumSort() {
       return albumSort;
     },
+    get nowPlayingDrawerOpen() {
+      return nowPlayingDrawerOpen;
+    },
     openSettings() {
       showSettings = true;
       showDeviceSync = false;
+      nowPlayingDrawerOpen = false;
     },
     closeSettings() {
       showSettings = false;
@@ -25,12 +30,24 @@ function createUiStore() {
     openDeviceSync() {
       showDeviceSync = true;
       showSettings = false;
+      nowPlayingDrawerOpen = false;
     },
     closeDeviceSync() {
       showDeviceSync = false;
     },
     setAlbumSort(sort: AlbumSort) {
       albumSort = sort;
+    },
+    // Deliberately mutually exclusive with Settings/Device Sync: the drawer
+    // is a fixed-position overlay that would otherwise visually stack on
+    // top of those panels rather than replacing them.
+    openNowPlayingDrawer() {
+      nowPlayingDrawerOpen = true;
+      showSettings = false;
+      showDeviceSync = false;
+    },
+    closeNowPlayingDrawer() {
+      nowPlayingDrawerOpen = false;
     },
   };
 }

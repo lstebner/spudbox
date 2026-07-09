@@ -3,20 +3,22 @@
   import { Pause, Play, SkipBack, SkipForward, Volume2 } from "@lucide/svelte";
   import { library } from "$lib/stores/library.svelte";
   import { player } from "$lib/stores/player.svelte";
+  import { ui } from "$lib/stores/ui.svelte";
   import { formatDuration } from "$lib/format";
   import StarRating from "$lib/components/rating/StarRating.svelte";
   import Equalizer from "$lib/components/transport/Equalizer.svelte";
 
-  // Looked up from the complete unfiltered list (not the artist-filtered
-  // `albums`) since playback can be on an album outside whatever's
-  // currently browsed — same reasoning as goToAlbum below.
+  // Looked up via findAlbumById (checks hidden albums too, not just the
+  // artist-filtered `albums`) since playback can be on an album outside
+  // whatever's currently browsed, or one the user has since hidden — same
+  // reasoning the now-playing drawer uses.
   const currentAlbum = $derived(
-    library.allAlbums.find((a) => a.id === player.snapshot.album_id) ?? null,
+    player.snapshot.album_id !== null ? library.findAlbumById(player.snapshot.album_id) : null,
   );
 
-  function goToCurrentAlbum() {
+  function openNowPlayingDrawer() {
     if (player.snapshot.album_id !== null) {
-      library.goToAlbum(player.snapshot.album_id);
+      ui.openNowPlayingDrawer();
     }
   }
 
@@ -42,9 +44,9 @@
 <div class="transport">
   <button
     class="now-playing"
-    onclick={goToCurrentAlbum}
+    onclick={openNowPlayingDrawer}
     disabled={player.snapshot.album_id === null}
-    aria-label="Go to album"
+    aria-label="Show now playing"
   >
     <div class="art">
       {#if player.snapshot.art_path}
