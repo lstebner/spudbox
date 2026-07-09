@@ -1,10 +1,63 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { Palette, Check } from "@lucide/svelte";
   import { theme, THEMES } from "$lib/stores/theme.svelte";
 
   let open = $state(false);
+  let focusedOptionIndex = $state(0);
+  let optionElements: (HTMLButtonElement | null)[] = [];
+  let themeButtonElement = $state<HTMLButtonElement | null>(null);
 
-  function clickOutside(node: HTMLElement) {
+  function selectTheme(id: (typeof THEMES)[number]["id"]) {
+    theme.setTheme(id);
+    open = false;
+    themeButtonElement?.focus();
+  }
+
+  async function openThemeList() {
+    open = true;
+    focusedOptionIndex = Math.max(0, THEMES.findIndex((t) => t.id === theme.current));
+    await tick();
+    optionElements[focusedOptionIndex]?.focus();
+  }
+
+  function handleListKeydown(event: KeyboardEvent) {
+    switch (event.key) {
+      case "ArrowDown":
+        event.preventDefault();
+        focusedOptionIndex = (focusedOptionIndex + 1) % THEMES.length;
+        optionElements[focusedOptionIndex]?.focus();
+        break;
+      case "ArrowUp":
+        event.preventDefault();
+        focusedOptionIndex = (focusedOptionIndex - 1 + THEMES.length) % THEMES.length;
+        optionElements[focusedOptionIndex]?.focus();
+        break;
+      case "Home":
+        event.preventDefault();
+        focusedOptionIndex = 0;
+        optionElements[0]?.focus();
+        break;
+      case "End":
+        event.preventDefault();
+        focusedOptionIndex = THEMES.length - 1;
+        optionElements[THEMES.length - 1]?.focus();
+        break;
+      case "Escape":
+        open = false;
+        themeButtonElement?.focus();
+        break;
+    }
+  }
+
+  function handleButtonKeydown(event: KeyboardEvent) {
+    if ((event.key === "ArrowDown" || event.key === "ArrowUp") && !open) {
+      event.preventDefault();
+      openThemeList();
+    }
+  }
+
+  function closeOnOutsideClick(node: HTMLElement) {
     function onMouseDown(event: MouseEvent) {
       if (!node.contains(event.target as Node)) open = false;
     }
@@ -17,11 +70,21 @@
   }
 </script>
 
-<div class="theme-switcher" use:clickOutside>
+<div
+  class="theme-switcher"
+  use:closeOnOutsideClick
+  onfocusout={(e) => {
+    if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node | null)) {
+      open = false;
+    }
+  }}
+>
   <button
+    bind:this={themeButtonElement}
     class="theme-button"
     class:active={open}
-    onclick={() => (open = !open)}
+    onclick={() => (open ? (open = false) : openThemeList())}
+    onkeydown={handleButtonKeydown}
     aria-label="Change theme"
     aria-haspopup="listbox"
     aria-expanded={open}
@@ -31,17 +94,22 @@
   </button>
 
   {#if open}
-    <div class="theme-popover" role="listbox" aria-label="Theme">
-      {#each THEMES as option (option.id)}
+    <div
+      class="theme-popover"
+      role="listbox"
+      aria-label="Theme"
+      tabindex="-1"
+      onkeydown={handleListKeydown}
+    >
+      {#each THEMES as option, i (option.id)}
         <button
           role="option"
           aria-selected={option.id === theme.current}
+          tabindex="-1"
+          bind:this={optionElements[i]}
           class="theme-option"
           class:selected={option.id === theme.current}
-          onclick={() => {
-            theme.setTheme(option.id);
-            open = false;
-          }}
+          onclick={() => selectTheme(option.id)}
         >
           <span class="swatch" data-theme={option.id}></span>
           {option.label}
