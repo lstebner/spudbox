@@ -12,7 +12,7 @@
     "test": "vitest run",
     "tauri": "tauri"
   },
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
     "@lucide/svelte": "^1.21.0",
