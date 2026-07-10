@@ -51,6 +51,34 @@
   --warning-bg: color-mix(in srgb, var(--warning) 18%, var(--bg-elevated));
   --warning-border: color-mix(in srgb, var(--warning) 45%, var(--bg-elevated));
   --accent-tint: color-mix(in srgb, var(--accent) 10%, var(--bg-hover));
+
+  /* Track row hover/playing text colors. Pass through to the normal text
+   * tokens by default — a no-op that preserves standard hover behavior —
+   * but a theme can override all of these to flip the row to a dark chip
+   * with light ink instead of just staying light (`lemon` does this). See
+   * "The lemon hover flip" in DESIGN_SYSTEM.md. */
+  --row-hover-bg: var(--bg-hover);
+  --row-hover-title-ink: var(--text-primary);
+  --row-hover-num-ink: var(--text-tertiary);
+  --row-hover-dur-ink: var(--text-secondary);
+  --row-active-bg: var(--bg-selected);
+  --row-active-title-ink: var(--accent-hover);
+  --row-active-num-ink: var(--text-tertiary);
+  --row-active-dur-ink: var(--text-secondary);
+
+  /* Sidebar/transport-bar ("chrome") background and text colors. Pass
+   * through to the normal bg-elevated/text tokens by default — a no-op —
+   * but mint/grape/lemon override all of these to a muted, darkened tint
+   * of their own hue instead of staying near-white, so the two most
+   * persistently-visible chrome surfaces read as themed too, not just the
+   * content area. See "Chrome tokens" in DESIGN_SYSTEM.md. */
+  --chrome-bg: var(--bg-elevated);
+  --chrome-hover-bg: var(--bg-hover);
+  --chrome-selected-bg: var(--bg-selected);
+  --chrome-border: var(--border);
+  --chrome-text-primary: var(--text-primary);
+  --chrome-text-secondary: var(--text-secondary);
+  --chrome-text-tertiary: var(--text-tertiary);
 }
 
 :root[data-theme="dark"] {
@@ -87,66 +115,119 @@
   --warning: #8a5f10;
 }
 
-:root[data-theme="green"] {
-  /* Neutrals carry the accent's own hue (H145) at a low, elevation-ramped
-   * saturation rather than reusing `dark`'s neutral gray — see "Tinting a
-   * colored theme's neutrals" in DESIGN_SYSTEM.md. Lightness matches `dark`
-   * exactly so every contrast ratio below is unchanged from the neutral
-   * version. */
-  --bg-base: #0d1410;
-  --bg-elevated: #14211a;
-  --bg-hover: #1d3728;
-  --bg-selected: #224932;
-  --border: #21402e;
-  --text-primary: #f3f4f3;
-  --text-secondary: #90a79a;
-  --text-tertiary: #5c846d;
-  --accent: #78b08b;
-  --accent-hover: #8bbb9b;
-  --accent-contrast: #15151a;
-  /* Shifted toward emerald/teal so a "connected" badge doesn't read as
-   * just another shade of this theme's own sage-green accent. */
-  --success: #5bc7a0;
-  --danger: #e07070;
-  --warning: #d4a040;
+:root[data-theme="mint"] {
+  /* Built on `light`'s neutral scale, not `dark`'s: bg-base carries a bold,
+   * vividly-saturated tint of the accent's own hue (H158/162), while
+   * bg-elevated stays close to white so chrome (sidebar/transport/popovers)
+   * reads as clean structure against the bold content area. bg-hover/
+   * bg-selected/border step down in lightness from bg-elevated (the
+   * "pressed" direction `light` uses, not `dark`'s "brighter on hover").
+   * Saturation is intentionally much higher than `light`'s own restrained
+   * palette — this is the "fun and poppy, not restrained" family of
+   * themes. See "Tinting a colored theme's neutrals" in DESIGN_SYSTEM.md. */
+  --bg-base: #cef3e5;
+  --bg-elevated: #f8fcfa;
+  --bg-hover: #e1f4ed;
+  --bg-selected: #c4eede;
+  --border: #abe3ce;
+  --text-primary: #16221e;
+  --text-secondary: #446a5c;
+  --text-tertiary: #538875;
+  --accent: #067957;
+  --accent-hover: #04583f;
+  --accent-contrast: #ffffff;
+  /* Shifted toward true grass-green (H134) so a "connected" badge doesn't
+   * read as just another shade of this theme's own teal/mint accent. */
+  --success: #16692a;
+  --danger: #aa1b0e;
+  --warning: #885007;
+
+  /* Sidebar/transport chrome: a muted (low-saturation), darkened tint of
+   * this theme's own hue — see "Chrome tokens" in DESIGN_SYSTEM.md. */
+  --chrome-bg: #253c34;
+  --chrome-hover-bg: #2d4d43;
+  --chrome-selected-bg: #355f51;
+  --chrome-border: #34554a;
+  --chrome-text-primary: #ebefee;
+  --chrome-text-secondary: #acbeb8;
+  --chrome-text-tertiary: #7e9a91;
 }
 
-:root[data-theme="purple"] {
-  /* Neutrals tinted to H278 — see the `green` theme's comment above. */
-  --bg-base: #110d14;
-  --bg-elevated: #1c1421;
-  --bg-hover: #2d1d37;
-  --bg-selected: #3b2249;
-  --border: #352140;
-  --text-primary: #f4f3f4;
-  --text-secondary: #9f90a7;
-  --text-tertiary: #765c84;
-  --accent: #a478ba;
-  --accent-hover: #b18bc4;
-  --accent-contrast: #15151a;
-  --success: #6fcf6f;
-  --danger: #e07070;
-  --warning: #d4a040;
+:root[data-theme="grape"] {
+  /* Neutrals tinted to H272, anchored on accent #6f2da8 (a literal grape/
+   * grape-candy color) — see the `mint` theme's comment above. */
+  --bg-base: #dfccf0;
+  --bg-elevated: #faf8fc;
+  --bg-hover: #eee6f5;
+  --bg-selected: #ddc9ee;
+  --border: #ceb4e4;
+  --text-primary: #1e1823;
+  --text-secondary: #5d496e;
+  --text-tertiary: #775b8f;
+  --accent: #6f2da8;
+  --accent-hover: #4b0e81;
+  --accent-contrast: #ffffff;
+  --success: #18623d;
+  --danger: #aa1b0e;
+  --warning: #744806;
+
+  /* Sidebar/transport chrome — see the `mint` theme's comment above. */
+  --chrome-bg: #362942;
+  --chrome-hover-bg: #433154;
+  --chrome-selected-bg: #513965;
+  --chrome-border: #533c67;
+  --chrome-text-primary: #f0eef1;
+  --chrome-text-secondary: #b8b0bf;
+  --chrome-text-tertiary: #90829b;
 }
 
-:root[data-theme="yellow"] {
-  /* Neutrals tinted to H40 — see the `green` theme's comment above. */
-  --bg-base: #14120d;
-  --bg-elevated: #211d14;
-  --bg-hover: #372e1d;
-  --bg-selected: #493c22;
-  --border: #403621;
-  --text-primary: #f4f4f3;
-  --text-secondary: #a7a090;
-  --text-tertiary: #84775c;
-  --accent: #bf9040;
-  --accent-hover: #c8a05b;
-  --accent-contrast: #15151a;
-  --success: #6fcf6f;
-  --danger: #e07070;
+:root[data-theme="lemon"] {
+  /* bg-base is #ffff81 exactly — a literal, maximally-saturated lemon
+   * yellow — with the rest of the ramp built around it; see the `mint`
+   * theme's comment above. */
+  --bg-base: #ffff81;
+  --bg-elevated: #fcfcf8;
+  --bg-hover: #fafac6;
+  --bg-selected: #ffff66;
+  --border: #ffff3d;
+  --text-primary: #232315;
+  --text-secondary: #6d6d40;
+  --text-tertiary: #837e49;
+  --accent: #776403;
+  --accent-hover: #554701;
+  --accent-contrast: #ffffff;
+  --success: #206f3a;
+  --danger: #aa1b0e;
   /* Shifted toward orange so caution warnings don't read as this theme's
-   * own ochre accent. */
-  --warning: #e08a55;
+   * own lemon-yellow accent. */
+  --warning: #a04008;
+
+  /* The lemon hover flip: instead of staying light like every other
+   * theme's hover/selected state, a hovered or playing track row inverts
+   * to a near-black chip with light/glowing ink. bg-base here is about as
+   * bold as a background can get, so this reads as an intentional, fun
+   * "flip to dark mode on interaction" moment rather than just another
+   * light shade. Scoped to TrackRow only for now — see DESIGN_SYSTEM.md
+   * before extending it elsewhere, since every other consumer of
+   * --bg-hover/--bg-selected pairs them with a fixed text color that
+   * assumes a light background. */
+  --row-hover-bg: #382f0a;
+  --row-hover-title-ink: #eeebdd;
+  --row-hover-num-ink: #eeebdd;
+  --row-hover-dur-ink: #eeebdd;
+  --row-active-bg: #241e05;
+  --row-active-title-ink: #ffe95c;
+  --row-active-num-ink: #ffe95c;
+  --row-active-dur-ink: #eeebdd;
+
+  /* Sidebar/transport chrome — see the `mint` theme's comment above. */
+  --chrome-bg: #3b3621;
+  --chrome-hover-bg: #4c4629;
+  --chrome-selected-bg: #5e5731;
+  --chrome-border: #554f30;
+  --chrome-text-primary: #efefeb;
+  --chrome-text-secondary: #bfbcab;
+  --chrome-text-tertiary: #9c947c;
 }
 
 * {
