@@ -59,3 +59,9 @@ npm run test                  # frontend: pure-logic helpers (vitest)
 ## Recommended IDE Setup
 
 [Neovim](https://neovim.io/) with [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig), running `rust_analyzer` for the Tauri backend and `svelte` (svelte-language-server) for the frontend. [mason.nvim](https://github.com/williamboman/mason.nvim) is the easiest way to install both servers.
+
+## License
+
+Copyright (C) 2026 Luke Stebner.
+
+Licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0-or-later). You're free to use, modify, and redistribute Spudbox, including commercially — but any distributed or network-hosted derivative must also be released under AGPLv3, source included.
