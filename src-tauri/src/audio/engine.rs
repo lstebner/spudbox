@@ -96,6 +96,10 @@ pub(super) fn run_engine(
 /// re-resamples/re-channel-converts at each source boundary automatically —
 /// so a queue of mixed sample rates/bit depths needs no manual handling
 /// here, just keeping the next source appended in time.
+///
+/// Running past the last track doesn't clear "now playing": it loops the
+/// queue back to the first track and leaves playback paused there, so the
+/// album stays visibly cued up rather than disappearing.
 fn poll_queue_advance(state: &mut EngineState, mpris: &Mpris) {
     let Some(sink) = &state.sink else { return };
     let current_len = sink.len();
@@ -117,13 +121,19 @@ fn poll_queue_advance(state: &mut EngineState, mpris: &Mpris) {
                 append_track(sink, next, state.eq.clone());
             }
         }
+        state.last_sink_len = sink.len();
         record_current_play(state);
         persist_session(state);
-    } else {
-        state.queue = None;
-        mpris.set_playback(MediaPlayback::Stopped);
+        return;
     }
-    state.last_sink_len = sink.len();
+
+    if let Some(queue) = &mut state.queue {
+        queue.reset_to_start();
+        start_playback_from_queue(state, mpris, false, None);
+        persist_session(state);
+    } else {
+        state.last_sink_len = sink.len();
+    }
 }
 
 fn handle_command(state: &mut EngineState, cmd: PlayerCommand, mpris: &Mpris) {

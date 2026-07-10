@@ -6,6 +6,7 @@
   import "@fontsource/inter/700.css";
   import "$lib/styles/theme.css";
   import { confirm } from "@tauri-apps/plugin-dialog";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
   import { HardDrive, Settings } from "@lucide/svelte";
   import { untrack } from "svelte";
   import ArtistList from "$lib/components/sidebar/ArtistList.svelte";
@@ -14,6 +15,7 @@
   import DeviceSyncPanel from "$lib/components/device/DeviceSyncPanel.svelte";
   import NowPlayingDrawer from "$lib/components/nowplaying/NowPlayingDrawer.svelte";
   import ThemeSwitcher from "$lib/components/theme/ThemeSwitcher.svelte";
+  import Dropdown from "$lib/components/common/Dropdown.svelte";
   import { library } from "$lib/stores/library.svelte";
   import { player } from "$lib/stores/player.svelte";
   import { ui, type AlbumSort } from "$lib/stores/ui.svelte";
@@ -21,6 +23,38 @@
   import { theme } from "$lib/stores/theme.svelte";
 
   let { children } = $props();
+
+  const ALBUM_SORT_OPTIONS: { value: AlbumSort; label: string }[] = [
+    { value: "date_added", label: "Newest first" },
+    { value: "artist_name", label: "Artist name" },
+    { value: "album_name", label: "Album name" },
+  ];
+
+  // Elements that already treat Space as their own native activation
+  // (buttons, form controls) must keep that behavior instead of also
+  // toggling playback.
+  const SPACE_ACTIVATING_TAG_NAMES = new Set(["BUTTON", "INPUT", "TEXTAREA", "SELECT"]);
+
+  function handleGlobalKeydown(event: KeyboardEvent) {
+    // Closing the window already fully quits the app (no close-to-tray
+    // interception exists), so Ctrl+Q just needs to trigger the same close.
+    if (event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey && event.code === "KeyQ") {
+      event.preventDefault();
+      getCurrentWindow().close();
+      return;
+    }
+
+    if (event.code !== "Space") return;
+    const target = event.target;
+    if (
+      target instanceof HTMLElement &&
+      (SPACE_ACTIVATING_TAG_NAMES.has(target.tagName) || target.isContentEditable)
+    ) {
+      return;
+    }
+    event.preventDefault();
+    player.togglePlayPause();
+  }
 
   $effect(() => {
     if (library.selectedAlbumId !== null) {
@@ -39,6 +73,8 @@
   theme.init();
 </script>
 
+<svelte:window onkeydown={handleGlobalKeydown} />
+
 <div class="app-shell">
   <aside class="sidebar">
     <ArtistList />
@@ -49,18 +85,12 @@
         {#if library.selectedAlbumId === null && !ui.showSettings}
           <div class="sort-control">
             <span class="sort-label">Sort by</span>
-            <div class="sort-select-wrap">
-              <select
-                class="sort-select"
-                aria-label="Sort albums by"
-                value={ui.albumSort}
-                onchange={(e) => ui.setAlbumSort(e.currentTarget.value as AlbumSort)}
-              >
-                <option value="date_added">Newest first</option>
-                <option value="artist_name">Artist name</option>
-                <option value="album_name">Album name</option>
-              </select>
-            </div>
+            <Dropdown
+              options={ALBUM_SORT_OPTIONS}
+              value={ui.albumSort}
+              onChange={(sort) => ui.setAlbumSort(sort)}
+              ariaLabel="Sort albums by"
+            />
           </div>
         {/if}
       </div>
@@ -184,43 +214,6 @@
   .sort-label {
     color: var(--text-tertiary);
     white-space: nowrap;
-  }
-
-  .sort-select-wrap {
-    position: relative;
-  }
-
-  .sort-select-wrap::after {
-    content: "";
-    position: absolute;
-    top: 50%;
-    right: 0.5em;
-    width: 12px;
-    height: 12px;
-    transform: translateY(-50%);
-    pointer-events: none;
-    background-color: var(--text-tertiary);
-    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-    mask-repeat: no-repeat;
-    mask-position: center;
-    mask-size: contain;
-  }
-
-  .sort-select {
-    appearance: none;
-    background-color: var(--bg-hover);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    color: var(--text-primary);
-    cursor: pointer;
-    font-family: inherit;
-    font-size: inherit;
-    padding: 0.4em 1.8em 0.4em 0.6em;
-    outline: none;
-  }
-
-  .sort-select:focus {
-    border-color: var(--accent);
   }
 
   .toolbar-right {

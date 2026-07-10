@@ -25,6 +25,12 @@ impl Queue {
         self.current()
     }
 
+    /// Moves back to the first track, e.g. so playback can loop back to the
+    /// start (paused) once the queue naturally runs out at the end.
+    pub fn reset_to_start(&mut self) {
+        self.index = 0;
+    }
+
     pub fn move_to_previous(&mut self) -> Option<&TrackInfo> {
         if self.index == 0 {
             return None;
@@ -109,6 +115,17 @@ mod tests {
         assert_eq!(q.move_to_previous().unwrap().track_id, 1);
         assert!(q.move_to_previous().is_none(), "moving before the first track should return None, not wrap/panic");
         assert_eq!(q.index(), 0, "index should stay at 0, not underflow");
+    }
+
+    #[test]
+    fn reset_to_start_returns_to_the_first_track() {
+        let mut q = queue_of(&[1, 2, 3], 0);
+        q.advance();
+        q.advance();
+        assert!(q.advance().is_none(), "should be past the last track");
+        q.reset_to_start();
+        assert_eq!(q.index(), 0);
+        assert_eq!(q.current().unwrap().track_id, 1);
     }
 
     #[test]
