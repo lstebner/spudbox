@@ -143,8 +143,9 @@
     flex-direction: column;
     overflow-x: hidden;
     overflow-y: auto;
-    border-right: 1px solid var(--border);
-    background: var(--bg-elevated);
+    border-right: 1px solid var(--chrome-border);
+    background: var(--chrome-bg);
+    color: var(--chrome-text-primary);
   }
 
   .content {
@@ -264,7 +265,8 @@
     right: 0;
     bottom: 0;
     height: var(--transport-height);
-    border-top: 1px solid var(--border);
-    background: var(--bg-elevated);
+    border-top: 1px solid var(--chrome-border);
+    background: var(--chrome-bg);
+    color: var(--chrome-text-primary);
   }
 </style>

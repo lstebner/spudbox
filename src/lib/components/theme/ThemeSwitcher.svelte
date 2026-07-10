@@ -199,12 +199,18 @@
     border: 1px solid var(--border);
   }
 
-  /* Swatches show each theme's own accent, regardless of the currently
-   * active theme, so this is the one place accent is looked up by an
-   * explicit data-theme selector rather than inherited from the root. */
-  .swatch[data-theme="dark"] { background: #818cf8; }
-  .swatch[data-theme="light"] { background: #5b5fd6; }
-  .swatch[data-theme="green"] { background: #78b08b; }
-  .swatch[data-theme="purple"] { background: #a478ba; }
-  .swatch[data-theme="yellow"] { background: #bf9040; }
+  /* Swatches show each theme's own --bg-base, regardless of the currently
+   * active theme, so this is the one place a theme's color is looked up by
+   * an explicit data-theme selector rather than inherited from the root.
+   * --bg-base (not --accent) is what actually previews "what this theme
+   * looks like": using --accent made dark/light backwards (dark's accent
+   * is brighter than light's, since it needs to pop against a near-black
+   * background — the opposite of what "Dark"/"Light" implies at a
+   * glance), and for mint/grape/lemon, --accent is a deep, low-lightness
+   * tone chosen for text contrast, not their identity color. */
+  .swatch[data-theme="dark"] { background: #121214; }
+  .swatch[data-theme="light"] { background: #f2f2f4; }
+  .swatch[data-theme="mint"] { background: #cef3e5; }
+  .swatch[data-theme="grape"] { background: #dfccf0; }
+  .swatch[data-theme="lemon"] { background: #ffff81; }
 </style>

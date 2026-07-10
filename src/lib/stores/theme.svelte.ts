@@ -1,13 +1,13 @@
 import { commands } from "$lib/api/commands";
 
-export type Theme = "dark" | "light" | "green" | "purple" | "yellow";
+export type Theme = "dark" | "light" | "mint" | "grape" | "lemon";
 
 export const THEMES: { id: Theme; label: string }[] = [
   { id: "dark", label: "Dark" },
   { id: "light", label: "Light" },
-  { id: "green", label: "Green" },
-  { id: "purple", label: "Purple" },
-  { id: "yellow", label: "Yellow" },
+  { id: "mint", label: "Mint" },
+  { id: "grape", label: "Grape" },
+  { id: "lemon", label: "Lemon" },
 ];
 
 const DEFAULT_THEME: Theme = "dark";

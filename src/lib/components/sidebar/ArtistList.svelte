@@ -201,7 +201,7 @@
     top: 0;
     z-index: 1;
     padding: 0.75em 0.5em 0.25em;
-    background: var(--bg-elevated);
+    background: var(--chrome-bg);
   }
 
   .search-wrap {
@@ -210,17 +210,17 @@
 
   .search input {
     width: 100%;
-    background: var(--bg-hover);
-    border: 1px solid var(--border);
+    background: var(--chrome-hover-bg);
+    border: 1px solid var(--chrome-border);
     border-radius: var(--radius);
-    color: var(--text-primary);
+    color: var(--chrome-text-primary);
     padding: 0.4em 0.6em;
     padding-right: 1.8em;
     box-sizing: border-box;
   }
 
   .search input::placeholder {
-    color: var(--text-tertiary);
+    color: var(--chrome-text-tertiary);
   }
 
   .search-clear {
@@ -230,7 +230,7 @@
     transform: translateY(-50%);
     background: none;
     border: none;
-    color: var(--text-tertiary);
+    color: var(--chrome-text-tertiary);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -240,7 +240,7 @@
   }
 
   .search-clear:hover {
-    color: var(--text-primary);
+    color: var(--chrome-text-primary);
   }
 
   .artist-list {
@@ -261,7 +261,7 @@
     justify-content: center;
     background: none;
     border: none;
-    color: var(--text-tertiary);
+    color: var(--chrome-text-tertiary);
     cursor: pointer;
     width: 1.5em;
     flex-shrink: 0;
@@ -269,7 +269,7 @@
   }
 
   .caret:hover {
-    color: var(--text-primary);
+    color: var(--chrome-text-primary);
   }
 
   .artist-item {
@@ -285,17 +285,17 @@
     padding: 0.5em 0.75em;
     border-radius: var(--radius);
     cursor: pointer;
-    color: var(--text-secondary);
+    color: var(--chrome-text-secondary);
   }
 
   .artist-item:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
+    background: var(--chrome-hover-bg);
+    color: var(--chrome-text-primary);
   }
 
   .artist-item.active {
-    background: var(--bg-selected);
-    color: var(--text-primary);
+    background: var(--chrome-selected-bg);
+    color: var(--chrome-text-primary);
   }
 
   .name {
@@ -305,7 +305,7 @@
   }
 
   .count {
-    color: var(--text-tertiary);
+    color: var(--chrome-text-tertiary);
     font-size: 0.85em;
     flex-shrink: 0;
   }
@@ -325,7 +325,7 @@
     padding: 0.35em 0.75em;
     border-radius: var(--radius);
     cursor: pointer;
-    color: var(--text-tertiary);
+    color: var(--chrome-text-tertiary);
     font-size: 0.9em;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -333,19 +333,19 @@
   }
 
   .album-item:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
+    background: var(--chrome-hover-bg);
+    color: var(--chrome-text-primary);
   }
 
   .album-item.active {
-    background: var(--bg-selected);
-    color: var(--text-primary);
+    background: var(--chrome-selected-bg);
+    color: var(--chrome-text-primary);
   }
 
   .hidden-section {
     margin-top: 0.5em;
     padding-top: 0.5em;
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--chrome-border);
   }
 
   .hidden-label {

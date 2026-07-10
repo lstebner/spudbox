@@ -45,12 +45,13 @@
   }
 
   .track-row:hover {
-    background: var(--bg-hover);
+    background: var(--row-hover-bg);
+    color: var(--row-hover-title-ink);
   }
 
   .track-row.playing {
-    background: var(--bg-selected);
-    color: var(--accent-hover);
+    background: var(--row-active-bg);
+    color: var(--row-active-title-ink);
   }
 
   .col-no {
@@ -63,6 +64,19 @@
     justify-content: flex-end;
   }
 
+  /* --row-hover-num-ink / --row-active-num-ink default to the same
+   * text-tertiary/text-secondary values .col-no/.col-duration already use
+   * at rest — a no-op for every theme except lemon, which overrides them
+   * to stay legible against its flipped dark hover/selected background.
+   * See "The lemon hover flip" in docs/DESIGN_SYSTEM.md. */
+  .track-row:hover .col-no {
+    color: var(--row-hover-num-ink);
+  }
+
+  .track-row.playing .col-no {
+    color: var(--row-active-num-ink);
+  }
+
   .col-title {
     flex: 1;
     overflow: hidden;
@@ -73,5 +87,13 @@
   .col-duration {
     color: var(--text-secondary);
     flex-shrink: 0;
+  }
+
+  .track-row:hover .col-duration {
+    color: var(--row-hover-dur-ink);
+  }
+
+  .track-row.playing .col-duration {
+    color: var(--row-active-dur-ink);
   }
 </style>
