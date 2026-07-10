@@ -15,5 +15,15 @@ export default defineConfig({
     include: ["src/**/*.test.ts"],
     environment: "happy-dom",
     setupFiles: ["./src/vitest.setup.ts"],
+    coverage: {
+      provider: "v8",
+      include: ["src/lib/**/*.{ts,svelte}"],
+      exclude: [
+        "src/lib/api/**",
+        "src/lib/types.ts",
+        "src/**/*.test.ts",
+        "src/vitest.setup.ts",
+      ],
+    },
   },
 });
