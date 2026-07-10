@@ -53,6 +53,11 @@
       return;
     }
     event.preventDefault();
+    // Ignore OS auto-repeat: player.snapshot.state only updates from the
+    // backend's ~4Hz playback-progress event, not synchronously after a
+    // command is sent, so a held key would re-read the same stale state
+    // and spam the same toggle command on every repeat.
+    if (event.repeat) return;
     player.togglePlayPause();
   }
 

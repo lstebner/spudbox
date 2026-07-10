@@ -132,6 +132,12 @@ fn poll_queue_advance(state: &mut EngineState, mpris: &Mpris) {
         start_playback_from_queue(state, mpris, false, None);
         persist_session(state);
     } else {
+        // state.sink and state.queue are always set/cleared together (Stop,
+        // SetQueue, and start_playback_from_queue all pair them), so this
+        // branch should be unreachable while state.sink is Some — kept only
+        // to keep last_sink_len in sync if that invariant is ever broken.
+        // No MPRIS update needed here: whatever paired teardown cleared the
+        // queue already sent its own Stopped notice.
         state.last_sink_len = sink.len();
     }
 }
