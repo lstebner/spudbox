@@ -1,4 +1,9 @@
 <script lang="ts">
+  import "@fontsource/inter/300.css";
+  import "@fontsource/inter/400.css";
+  import "@fontsource/inter/500.css";
+  import "@fontsource/inter/600.css";
+  import "@fontsource/inter/700.css";
   import "$lib/styles/theme.css";
   import { confirm } from "@tauri-apps/plugin-dialog";
   import { HardDrive, Settings } from "@lucide/svelte";
