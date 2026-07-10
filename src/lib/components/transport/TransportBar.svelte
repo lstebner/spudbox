@@ -25,16 +25,48 @@
   let seeking = $state(false);
   let seekValue = $state(0);
 
+  // Seeking is dispatched fire-and-forget over Tauri IPC, and the backend's
+  // position only reaches the frontend via the ~4Hz playback-progress
+  // event — so the target isn't confirmed the instant player.seek()
+  // returns. Clearing `seeking` immediately on commit raced that event:
+  // the bar would flash back to the stale pre-seek position before
+  // snapping forward once the real update arrived. Instead, keep showing
+  // the optimistic value until an incoming snapshot's position lands
+  // within tolerance of the target (or the fallback timeout gives up, in
+  // case the seek silently failed on the backend).
+  let pendingSeekTargetMs = $state<number | null>(null);
+  let seekFallbackTimer: ReturnType<typeof setTimeout> | undefined;
+  const SEEK_CONFIRM_TOLERANCE_MS = 750;
+  const SEEK_CONFIRM_FALLBACK_MS = 2000;
+
+  function clearPendingSeek() {
+    seeking = false;
+    pendingSeekTargetMs = null;
+    clearTimeout(seekFallbackTimer);
+  }
+
   function onSeekInput(e: Event) {
     seeking = true;
+    pendingSeekTargetMs = null;
+    clearTimeout(seekFallbackTimer);
     seekValue = Number((e.target as HTMLInputElement).value);
   }
 
   function onSeekCommit(e: Event) {
     const positionMs = Number((e.target as HTMLInputElement).value);
+    seekValue = positionMs;
+    pendingSeekTargetMs = positionMs;
     player.seek(positionMs);
-    seeking = false;
+    clearTimeout(seekFallbackTimer);
+    seekFallbackTimer = setTimeout(clearPendingSeek, SEEK_CONFIRM_FALLBACK_MS);
   }
+
+  $effect(() => {
+    if (pendingSeekTargetMs === null) return;
+    if (Math.abs(player.snapshot.position_ms - pendingSeekTargetMs) <= SEEK_CONFIRM_TOLERANCE_MS) {
+      clearPendingSeek();
+    }
+  });
 
   function onVolumeChange(e: Event) {
     player.setVolume(Number((e.target as HTMLInputElement).value));
