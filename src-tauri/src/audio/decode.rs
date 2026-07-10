@@ -17,6 +17,11 @@ use symphonia::default::{get_codecs, get_probe};
 
 const MAX_DECODE_RETRIES: usize = 3;
 
+// Seeking exactly at (or past) a track's total duration leaves symphonia's
+// format reader with no packet to land on, so an end-of-track seek target
+// is nudged just inside the track by this many seconds instead.
+const END_OF_TRACK_SEEK_EPSILON: f64 = 0.0001;
+
 /// Wraps a file with a correctly-reported byte length, unlike rodio 0.20's
 /// internal `ReadSeekSource`, which hardcodes `byte_len()` to `None`. Without
 /// a known byte length, symphonia's FLAC/format readers can't compute a seek
@@ -207,6 +212,20 @@ impl FileSource {
     }
 }
 
+/// Nudges a `Time` back by `END_OF_TRACK_SEEK_EPSILON`, borrowing a whole
+/// second (via `1.0 + frac`, not `1.0 - frac`) when the subtraction pushes
+/// the fractional part negative — `Time::frac` must stay within `[0.0,
+/// 1.0)` or symphonia's `TimeBase::calc_timestamp` panics.
+fn time_just_before(duration: Time) -> Time {
+    let mut t = duration;
+    t.frac -= END_OF_TRACK_SEEK_EPSILON;
+    if t.frac < 0.0 {
+        t.seconds = t.seconds.saturating_sub(1);
+        t.frac += 1.0;
+    }
+    t
+}
+
 impl Iterator for FileSource {
     type Item = i16;
 
@@ -259,13 +278,7 @@ impl Source for FileSource {
             .is_some_and(|dur| dur.saturating_sub(pos).as_millis() < 1);
 
         let time: Time = if seek_beyond_end {
-            let mut t = self.total_duration.expect("checked by seek_beyond_end above");
-            t.frac -= 0.0001;
-            if t.frac < 0.0 {
-                t.seconds = t.seconds.saturating_sub(1);
-                t.frac = 1.0 - t.frac;
-            }
-            t
+            time_just_before(self.total_duration.expect("checked by seek_beyond_end above"))
         } else {
             pos.as_secs_f64().into()
         };
@@ -288,5 +301,44 @@ impl Source for FileSource {
         self.current_frame_offset += to_skip;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_valid_time(time: Time) {
+        assert!(
+            time.frac >= 0.0 && time.frac < 1.0,
+            "Time::frac must stay in [0.0, 1.0), got {}",
+            time.frac
+        );
+    }
+
+    #[test]
+    fn time_just_before_subtracts_the_epsilon_without_borrowing() {
+        let result = time_just_before(Time::new(10, 0.5));
+        assert_valid_time(result);
+        assert_eq!(result.seconds, 10);
+        assert!((result.frac - (0.5 - END_OF_TRACK_SEEK_EPSILON)).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn time_just_before_borrows_a_second_when_frac_underflows() {
+        // A previous version computed `1.0 - t.frac` here on an already-negative
+        // `t.frac`, producing e.g. 1.00005 and panicking deep in symphonia's
+        // `TimeBase::calc_timestamp` ("Invalid range for Time fractional part").
+        let result = time_just_before(Time::new(5, 0.00005));
+        assert_valid_time(result);
+        assert_eq!(result.seconds, 4);
+        assert!((result.frac - 0.99995).abs() < 1e-9);
+    }
+
+    #[test]
+    fn time_just_before_saturates_seconds_at_zero_for_sub_second_tracks() {
+        let result = time_just_before(Time::new(0, 0.0));
+        assert_valid_time(result);
+        assert_eq!(result.seconds, 0);
     }
 }
