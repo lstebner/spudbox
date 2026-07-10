@@ -53,6 +53,43 @@ CI (`.github/workflows/ci.yml`) runs both test suites on `pull_request` to `main
 - **Accessibility**: follow accessibility best practices throughout the UI — semantic HTML elements, ARIA attributes where needed, keyboard navigability, sufficient color contrast. The goal is for the entire app to be accessibility friendly.
 - **CI system dependencies**: if a new Rust crate pulls in a native Linux library, add its `-dev` package to the `Install system dependencies` step in both `.github/workflows/build-release.yml` and `.github/workflows/ci.yml`. The build-release action will fail at link time if the library is missing.
 
+## Testing
+
+### Philosophy
+
+Coverage reports show **gaps**, not correctness. Don't chase a number — use the report to identify untested behavior worth adding, and ignore lines that don't represent meaningful logic (thin wrappers, type-only files, framework boilerplate).
+
+### What to test
+
+Prioritise in this order:
+
+1. **Pure logic** — functions with no DOM or Tauri dependency (`format.ts`, extracted search/filter helpers). Zero setup, highest confidence.
+2. **Presentational components** — props in, callbacks out, no store imports (`TrackRow`, `StarRating`, `Dropdown`). Render with `@testing-library/svelte`, assert output and callback calls. Zero mocking.
+3. **Lightly-connected components** — import Tauri helpers (`convertFileSrc`) but no stores. The global Tauri mock in `vitest.setup.ts` covers these; no per-test mocking needed.
+4. **Stores with pure logic** — test factory functions directly (export `createFooStore` alongside the singleton) to get isolated instances per test. Valuable when the store has non-trivial state transitions.
+5. **Store-connected components** — import `library`/`player`/`ui` stores. High mocking burden; only worth testing if there's logic in the component itself (e.g. search ranking in `ArtistList`). Use `vi.mocked(commands.foo).mockResolvedValue(...)` per-test to inject fixture data.
+
+### What to skip
+
+- Thin Tauri IPC wrappers (`api/commands.ts`, `api/events.ts`) — they're just `invoke`/`listen` calls, no logic.
+- Type declaration files.
+- Heavily virtualizer-dependent components (`AlbumGrid`, `TrackTable`) — layout isn't computed in `happy-dom`, so virtualizer row rendering won't reflect real behaviour.
+- Components whose interesting behaviour lives entirely in the Rust backend (scanning, playback) — that's covered by Rust tests.
+
+### Mocking rules
+
+- **Mock at the boundary, not in the middle**: the global shim in `vitest.setup.ts` mocks `@tauri-apps/api/core` and `@tauri-apps/api/event` once. Don't add per-test mocks for individual `commands.*` calls unless a specific test needs a non-null return value.
+- **No mocking for presentational components**: if a component needs mocking to render, it's a sign the test is fighting the architecture. Prefer passing test data through props.
+- **`vi.spyOn` is fine for DOM APIs** (`getBoundingClientRect`, etc.) that `happy-dom` stubs with zeros. Restore with `vi.restoreAllMocks()` in `afterEach`.
+
+### Stack
+
+- **Runner**: Vitest (`npm run test`; `npm run test:coverage` for the coverage report)
+- **DOM environment**: `happy-dom` (via `vitest.config.ts`)
+- **Component rendering**: `@testing-library/svelte` — query by role/label/text, never by CSS class or internal structure
+- **Interactions**: `@testing-library/user-event` for realistic input sequences; `fireEvent` only when precise event properties (e.g. `clientX`) are needed
+- **Assertions**: `@testing-library/jest-dom` matchers (`.toBeInTheDocument()`, `.toHaveFocus()`, `.toHaveAttribute()`, etc.)
+
 ## Architecture
 
 ### Process model
