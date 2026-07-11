@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ChevronDown, ChevronRight, EyeOff, X } from "@lucide/svelte";
   import { library } from "$lib/stores/library.svelte";
+  import { normalize, matchScore } from "$lib/search";
   import type { AlbumRow } from "$lib/types";
 
   let query = $state("");
@@ -15,23 +16,6 @@
       next.add(artistId);
     }
     manuallyExpanded = next;
-  }
-
-  // Strips everything but letters/numbers (so punctuation, apostrophes —
-  // straight or curly — ellipses, etc. can't cause a mismatch) and
-  // lowercases, applied to both the query and the text being searched.
-  function normalize(text: string): string {
-    return text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
-  }
-
-  // Returns 0 for an exact match, 1 for a prefix match, 2 for a substring
-  // match, or Infinity when the query doesn't appear in the text at all.
-  // Lower scores sort first so exact matches rise to the top.
-  function matchScore(normalizedText: string, normalizedQueryString: string): number {
-    if (normalizedText === normalizedQueryString) return 0;
-    if (normalizedText.startsWith(normalizedQueryString)) return 1;
-    if (normalizedText.includes(normalizedQueryString)) return 2;
-    return Infinity;
   }
 
   const searching = $derived(query.trim().length > 0);

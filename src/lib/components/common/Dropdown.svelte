@@ -18,7 +18,7 @@
 
   let open = $state(false);
   let focusedOptionIndex = $state(0);
-  let optionElements: (HTMLButtonElement | null)[] = [];
+  let optionElements = $state<(HTMLButtonElement | null)[]>([]);
   let triggerElement = $state<HTMLButtonElement | null>(null);
 
   const selectedLabel = $derived(options.find((option) => option.value === value)?.label ?? "");

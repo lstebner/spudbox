@@ -5,7 +5,7 @@
 
   let open = $state(false);
   let focusedOptionIndex = $state(0);
-  let optionElements: (HTMLButtonElement | null)[] = [];
+  let optionElements = $state<(HTMLButtonElement | null)[]>([]);
   let themeButtonElement = $state<HTMLButtonElement | null>(null);
 
   function selectTheme(id: (typeof THEMES)[number]["id"]) {

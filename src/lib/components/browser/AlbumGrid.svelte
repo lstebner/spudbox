@@ -6,6 +6,7 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { library } from "$lib/stores/library.svelte";
   import { ui } from "$lib/stores/ui.svelte";
+  import { sortAlbums } from "$lib/sort";
   import StarRating from "$lib/components/rating/StarRating.svelte";
 
   async function addFolder() {
@@ -48,20 +49,7 @@
   );
   const rowHeight = $derived(cardWidth + TEXT_HEIGHT + CARD_GAP);
 
-  const sortedAlbums = $derived.by(() => {
-    const albums = library.albums;
-    if (ui.albumSort === 'artist_name') {
-      return [...albums].sort((a, b) => {
-        const cmpArtist = a.album_artist.localeCompare(b.album_artist);
-        if (cmpArtist !== 0) return cmpArtist;
-        return a.title.localeCompare(b.title);
-      });
-    }
-    if (ui.albumSort === 'album_name') {
-      return [...albums].sort((a, b) => a.title.localeCompare(b.title));
-    }
-    return [...albums].sort((a, b) => (b.date_added ?? 0) - (a.date_added ?? 0));
-  });
+  const sortedAlbums = $derived(sortAlbums(library.albums, ui.albumSort));
 
   const rowCount = $derived(Math.ceil(sortedAlbums.length / columnsPerRow));
 
