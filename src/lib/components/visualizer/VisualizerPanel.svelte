@@ -6,6 +6,7 @@
   import { commands } from "$lib/api/commands";
   import { onVisualizerData } from "$lib/api/events";
   import { player } from "$lib/stores/player.svelte";
+  import Dropdown from "$lib/components/common/Dropdown.svelte";
 
   const TRANSITION_DURATION_MILLISECONDS = 200;
   const NUM_BANDS = 64;
@@ -13,10 +14,31 @@
   // Low-frequency bands shift one way, high-frequency the other, but the
   // total swing is narrow enough that every theme still reads as its own color.
   const HUE_SPREAD_DEGREES = 50;
+  // Sub-bass (bands 0–5, ~20–40Hz) and ultra-highs (bands 58–63, ~12–20kHz)
+  // are nearly silent in most music and create a visible flat gap where the
+  // outline closes at 12 o'clock. The outline uses only this inner slice,
+  // spread evenly around the full circle so the shape stays round.
+  const OUTLINE_BAND_START = 6;
+  const OUTLINE_BAND_END = 57; // inclusive
+
+  type VisualizerStyle = "bars" | "outline";
+  const STYLE_OPTIONS: { value: VisualizerStyle; label: string }[] = [
+    { value: "bars", label: "Bars" },
+    { value: "outline", label: "Outline" },
+  ];
 
   let { onclose }: { onclose: () => void } = $props();
 
+  const STYLE_STORAGE_KEY = "spudbox.visualizerStyle";
+
   let canvas: HTMLCanvasElement | undefined = $state();
+  let visualizerStyle: VisualizerStyle = $state(
+    (localStorage.getItem(STYLE_STORAGE_KEY) as VisualizerStyle | null) ?? "bars",
+  );
+
+  $effect(() => {
+    localStorage.setItem(STYLE_STORAGE_KEY, visualizerStyle);
+  });
 
   let currentBands = new Float32Array(NUM_BANDS);
   let targetBands = new Float32Array(NUM_BANDS);
@@ -47,44 +69,15 @@
     return [h * 360, s * 100, l * 100];
   }
 
-  function drawFrame() {
-    animationFrameId = requestAnimationFrame(drawFrame);
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const width = canvas.width;
-    const height = canvas.height;
-    const cx = width / 2;
-    const cy = height / 2;
-
-    const artSize = Math.min(width * 0.45, height * 0.45, 480);
-    const innerRadius = artSize / 2 + 4;
-    const availableRadius = Math.min(width, height) / 2 - innerRadius;
-    const maxBarHeight = availableRadius * 0.88;
-
-    // Interpolate toward target bands for smooth motion between FFT frames.
-    for (let i = 0; i < NUM_BANDS; i++) {
-      currentBands[i] = currentBands[i] * 0.72 + targetBands[i] * 0.28;
-    }
-
-    const angleStep = (Math.PI * 2) / NUM_BANDS;
-
-    const outerClipRadius = innerRadius + maxBarHeight + 20;
-
-    // Decay trail confined to the bar ring (annulus) only: the inner circle is
-    // punched out with a CCW arc so winding is zero there, leaving the center
-    // and the area outside the bars fully transparent on the canvas.
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(cx, cy, outerClipRadius, 0, Math.PI * 2);
-    ctx.arc(cx, cy, innerRadius - 4, 0, Math.PI * 2, true);
-    ctx.clip();
-    ctx.fillStyle = "rgba(0, 0, 0, 0.15)";
-    ctx.fillRect(0, 0, width, height);
-    ctx.restore();
-
-    // Bars clipped to the outer disc so the glow shadow doesn't bleed outside.
+  function drawBars(
+    ctx: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+    innerRadius: number,
+    maxBarHeight: number,
+    angleStep: number,
+    outerClipRadius: number,
+  ) {
     ctx.save();
     ctx.beginPath();
     ctx.arc(cx, cy, outerClipRadius, 0, Math.PI * 2);
@@ -101,8 +94,6 @@
       const startAngle = midAngle - angleStep / 2 + halfGap;
       const endAngle = midAngle + angleStep / 2 - halfGap;
 
-      // Shift hue smoothly across the frequency range, keeping saturation and
-      // lightness from the theme accent so the color family stays recognizable.
       const hueOffset = (i / (NUM_BANDS - 1) - 0.5) * HUE_SPREAD_DEGREES;
       const barH = ((accentH + hueOffset) % 360 + 360) % 360;
       const barLighter = Math.min(accentL + 15, 92);
@@ -125,6 +116,114 @@
     }
 
     ctx.restore();
+  }
+
+  function drawOutline(
+    ctx: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+    innerRadius: number,
+    maxBarHeight: number,
+    _angleStep: number,
+    outerClipRadius: number,
+  ) {
+    const bandCount = OUTLINE_BAND_END - OUTLINE_BAND_START + 1;
+
+    // Compute tip positions using only the musically active band slice.
+    // Angles are derived from position within the slice (not global band index)
+    // so the points are spread evenly around the full 360°.
+    const tipX = new Float32Array(bandCount);
+    const tipY = new Float32Array(bandCount);
+    for (let index = 0; index < bandCount; index++) {
+      const bandIndex = OUTLINE_BAND_START + index;
+      const radius = innerRadius + currentBands[bandIndex] * maxBarHeight;
+      const angle = (index / bandCount) * Math.PI * 2 - Math.PI / 2;
+      tipX[index] = cx + radius * Math.cos(angle);
+      tipY[index] = cy + radius * Math.sin(angle);
+    }
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerClipRadius, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+    ctx.shadowBlur = 14;
+
+    // Draw each segment as a quadratic Bezier from the midpoint before this
+    // tip to the midpoint after it, using the tip itself as the control point.
+    // This gives a smooth C1-continuous closed curve through all tip points.
+    for (let index = 0; index < bandCount; index++) {
+      const previous = (index - 1 + bandCount) % bandCount;
+      const next = (index + 1) % bandCount;
+
+      const startX = (tipX[previous] + tipX[index]) / 2;
+      const startY = (tipY[previous] + tipY[index]) / 2;
+      const endX = (tipX[index] + tipX[next]) / 2;
+      const endY = (tipY[index] + tipY[next]) / 2;
+
+      // Keep hue relative to position in the full frequency range so the color
+      // meaning (low = one end, high = other) is preserved even with fewer bands.
+      const bandIndex = OUTLINE_BAND_START + index;
+      const hueOffset = (bandIndex / (NUM_BANDS - 1) - 0.5) * HUE_SPREAD_DEGREES;
+      const segH = ((accentH + hueOffset) % 360 + 360) % 360;
+      const segLighter = Math.min(accentL + 15, 92);
+
+      ctx.shadowColor = `hsla(${segH}, ${accentS}%, ${accentL}%, 0.7)`;
+      ctx.strokeStyle = `hsla(${segH}, ${accentS}%, ${segLighter}%, 0.95)`;
+
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.quadraticCurveTo(tipX[index], tipY[index], endX, endY);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  function drawFrame() {
+    animationFrameId = requestAnimationFrame(drawFrame);
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const width = canvas.width;
+    const height = canvas.height;
+    const cx = width / 2;
+    const cy = height / 2;
+
+    const artSize = Math.min(width * 0.45, height * 0.45, 480);
+    const innerRadius = artSize / 2 + 4;
+    const availableRadius = Math.min(width, height) / 2 - innerRadius;
+    const maxBarHeight = availableRadius * 0.88;
+
+    // Interpolate toward target bands for smooth motion between FFT frames.
+    for (let i = 0; i < NUM_BANDS; i++) {
+      currentBands[i] = currentBands[i] * 0.72 + targetBands[i] * 0.28;
+    }
+
+    const angleStep = (Math.PI * 2) / NUM_BANDS;
+    const outerClipRadius = innerRadius + maxBarHeight + 20;
+
+    // Decay trail confined to the bar ring (annulus) only: the inner circle is
+    // punched out with a CCW arc so winding is zero there, leaving the center
+    // and the area outside the bars fully transparent on the canvas.
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerClipRadius, 0, Math.PI * 2);
+    ctx.arc(cx, cy, innerRadius - 4, 0, Math.PI * 2, true);
+    ctx.clip();
+    // Outline trails more slowly so ghosts pile up into visible artifacts.
+    const decayAlpha = visualizerStyle === "outline" ? 0.05 : 0.15;
+    ctx.fillStyle = `rgba(0, 0, 0, ${decayAlpha})`;
+    ctx.fillRect(0, 0, width, height);
+    ctx.restore();
+
+    if (visualizerStyle === "bars") {
+      drawBars(ctx, cx, cy, innerRadius, maxBarHeight, angleStep, outerClipRadius);
+    } else {
+      drawOutline(ctx, cx, cy, innerRadius, maxBarHeight, angleStep, outerClipRadius);
+    }
   }
 
   let unlistenVisualizer: (() => void) | undefined;
@@ -192,6 +291,21 @@
   {/if}
   <div class="scrim"></div>
 
+  <!-- Stop Escape from bubbling past this control so it closes the dropdown
+       without also closing the visualizer. -->
+  <div
+    class="style-control"
+    role="none"
+    onkeydown={(event) => { if (event.key === "Escape") event.stopPropagation(); }}
+  >
+    <Dropdown
+      options={STYLE_OPTIONS}
+      value={visualizerStyle}
+      onChange={(style) => { visualizerStyle = style; }}
+      ariaLabel="Visualizer style"
+    />
+  </div>
+
   <button class="close-button" onclick={onclose} aria-label="Close visualizer">
     <X size={20} />
   </button>
@@ -244,8 +358,8 @@
   .scrim {
     position: absolute;
     inset: 0;
-    /* Uniform dark layer under the horizontal vignette. Kept lighter than the
-       default --scrim-heavy so the gradient above it reads visually. */
+    /* Horizontal gradient: darker at the edges so the blurred background art
+       glows through in the center while the sides fade to near-black. */
     background: rgba(0, 0, 0, 0.55);
     background: linear-gradient(
       to right,
@@ -254,6 +368,13 @@
       rgba(0, 0, 0, 0.52) 72%,
       rgba(0, 0, 0, 0.88) 100%
     );
+  }
+
+  .style-control {
+    position: absolute;
+    top: 0.75em;
+    left: 0.75em;
+    z-index: 1;
   }
 
   .close-button {
