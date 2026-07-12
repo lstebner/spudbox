@@ -9,25 +9,47 @@
 
   const TRANSITION_DURATION_MILLISECONDS = 200;
   const NUM_BANDS = 64;
+  // How far (in degrees) the hue drifts across the full band range.
+  // Low-frequency bands shift one way, high-frequency the other, but the
+  // total swing is narrow enough that every theme still reads as its own color.
+  const HUE_SPREAD_DEGREES = 50;
 
   let { onclose }: { onclose: () => void } = $props();
 
   let canvas: HTMLCanvasElement | undefined = $state();
 
-  // Current smoothed bands used by the rAF loop, interpolating toward target.
   let currentBands = new Float32Array(NUM_BANDS);
   let targetBands = new Float32Array(NUM_BANDS);
   let animationFrameId = 0;
-  let accentColor = '#818cf8';
+  // HSL components of the active theme's accent color, parsed once on mount.
+  let accentH = 0;
+  let accentS = 0;
+  let accentL = 0;
 
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === "Escape") onclose();
   }
 
+  function hexToHsl(hex: string): [number, number, number] {
+    const r = parseInt(hex.slice(1, 3), 16) / 255;
+    const g = parseInt(hex.slice(3, 5), 16) / 255;
+    const b = parseInt(hex.slice(5, 7), 16) / 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    if (max === min) return [0, 0, l * 100];
+    const d = max - min;
+    const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    let h = 0;
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+    else if (max === g) h = ((b - r) / d + 2) / 6;
+    else h = ((r - g) / d + 4) / 6;
+    return [h * 360, s * 100, l * 100];
+  }
+
   function drawFrame() {
     animationFrameId = requestAnimationFrame(drawFrame);
     if (!canvas) return;
-
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
@@ -36,43 +58,64 @@
     const cx = width / 2;
     const cy = height / 2;
 
-    // Art geometry — must match the CSS formula.
     const artSize = Math.min(width * 0.45, height * 0.45, 480);
     const innerRadius = artSize / 2 + 4;
-    // Cap to the actual space between innerRadius and the canvas edge so bars
-    // never overflow the canvas boundary (the panel clips with overflow:hidden).
     const availableRadius = Math.min(width, height) / 2 - innerRadius;
     const maxBarHeight = availableRadius * 0.88;
 
-    ctx.clearRect(0, 0, width, height);
-
-    // Interpolate current bands toward target (smooth decay between FFT frames).
+    // Interpolate toward target bands for smooth motion between FFT frames.
     for (let i = 0; i < NUM_BANDS; i++) {
       currentBands[i] = currentBands[i] * 0.72 + targetBands[i] * 0.28;
     }
 
     const angleStep = (Math.PI * 2) / NUM_BANDS;
 
-    // Glow pass: draw wider, fully transparent bars first for bloom effect.
-    ctx.shadowBlur = 18;
-    ctx.shadowColor = accentColor + '80';
+    const outerClipRadius = innerRadius + maxBarHeight + 20;
 
-    const gradient = ctx.createRadialGradient(cx, cy, innerRadius, cx, cy, innerRadius + maxBarHeight);
-    gradient.addColorStop(0, accentColor + '55');
-    gradient.addColorStop(0.5, accentColor + 'bb');
-    gradient.addColorStop(1, accentColor + 'ff');
-    ctx.fillStyle = gradient;
+    // Decay trail confined to the bar ring (annulus) only: the inner circle is
+    // punched out with a CCW arc so winding is zero there, leaving the center
+    // and the area outside the bars fully transparent on the canvas.
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerClipRadius, 0, Math.PI * 2);
+    ctx.arc(cx, cy, innerRadius - 4, 0, Math.PI * 2, true);
+    ctx.clip();
+    ctx.fillStyle = "rgba(0, 0, 0, 0.15)";
+    ctx.fillRect(0, 0, width, height);
+    ctx.restore();
+
+    // Bars clipped to the outer disc so the glow shadow doesn't bleed outside.
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerClipRadius, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.shadowBlur = 18;
 
     for (let i = 0; i < NUM_BANDS; i++) {
       const magnitude = currentBands[i];
       if (magnitude < 0.002) continue;
 
       const barLength = magnitude * maxBarHeight;
-      // Start at 12 o'clock, rotate clockwise.
       const midAngle = i * angleStep - Math.PI / 2;
       const halfGap = angleStep * 0.08;
       const startAngle = midAngle - angleStep / 2 + halfGap;
       const endAngle = midAngle + angleStep / 2 - halfGap;
+
+      // Shift hue smoothly across the frequency range, keeping saturation and
+      // lightness from the theme accent so the color family stays recognizable.
+      const hueOffset = (i / (NUM_BANDS - 1) - 0.5) * HUE_SPREAD_DEGREES;
+      const barH = ((accentH + hueOffset) % 360 + 360) % 360;
+      const barLighter = Math.min(accentL + 15, 92);
+
+      ctx.shadowColor = `hsla(${barH}, ${accentS}%, ${accentL}%, 0.55)`;
+
+      const gradient = ctx.createRadialGradient(
+        cx, cy, innerRadius * 0.9,
+        cx, cy, innerRadius + barLength,
+      );
+      gradient.addColorStop(0, `hsla(${barH}, ${accentS}%, ${accentL}%, 0.45)`);
+      gradient.addColorStop(1, `hsla(${barH}, ${accentS}%, ${barLighter}%, 1.0)`);
+      ctx.fillStyle = gradient;
 
       ctx.beginPath();
       ctx.arc(cx, cy, innerRadius, startAngle, endAngle);
@@ -80,24 +123,30 @@
       ctx.closePath();
       ctx.fill();
     }
+
+    ctx.restore();
   }
 
+  let unlistenVisualizer: (() => void) | undefined;
+
   onMount(() => {
-    accentColor = getComputedStyle(document.documentElement)
-      .getPropertyValue('--accent')
+    const hex = getComputedStyle(document.documentElement)
+      .getPropertyValue("--accent")
       .trim();
+    [accentH, accentS, accentL] = hexToHsl(hex);
 
     commands.playbackEnableVisualizer();
 
-    const unsubscribe = onVisualizerData((bands) => {
+    onVisualizerData((bands) => {
       for (let i = 0; i < NUM_BANDS; i++) {
         targetBands[i] = bands[i] ?? 0;
       }
+    }).then((fn) => {
+      unlistenVisualizer = fn;
     });
 
     animationFrameId = requestAnimationFrame(drawFrame);
 
-    // Sync canvas size to its CSS size.
     const observer = new ResizeObserver(() => {
       if (!canvas) return;
       canvas.width = canvas.clientWidth;
@@ -116,10 +165,11 @@
 
   onDestroy(() => {
     cancelAnimationFrame(animationFrameId);
+    unlistenVisualizer?.();
     commands.playbackDisableVisualizer();
   });
 
-  const artPlaying = $derived(player.snapshot.state === 'playing');
+  const artPlaying = $derived(player.snapshot.state === "playing");
   const artOpacity = $derived(artPlaying ? 0.28 : 1.0);
 </script>
 
@@ -194,7 +244,16 @@
   .scrim {
     position: absolute;
     inset: 0;
-    background: var(--scrim-heavy);
+    /* Uniform dark layer under the horizontal vignette. Kept lighter than the
+       default --scrim-heavy so the gradient above it reads visually. */
+    background: rgba(0, 0, 0, 0.55);
+    background: linear-gradient(
+      to right,
+      rgba(0, 0, 0, 0.88) 0%,
+      rgba(0, 0, 0, 0.52) 28%,
+      rgba(0, 0, 0, 0.52) 72%,
+      rgba(0, 0, 0, 0.88) 100%
+    );
   }
 
   .close-button {
@@ -226,7 +285,6 @@
     justify-content: center;
   }
 
-  /* Square container that matches the art/canvas sizing formula. */
   .art-and-canvas {
     position: relative;
     width: min(45vw, 45vh, 480px);
@@ -235,7 +293,6 @@
 
   .canvas {
     position: absolute;
-    /* Canvas extends beyond the art-and-canvas bounds so bars can overflow. */
     inset: calc(-1 * min(28vw, 28vh, 300px));
     width: calc(100% + 2 * min(28vw, 28vh, 300px));
     height: calc(100% + 2 * min(28vw, 28vh, 300px));
@@ -266,5 +323,4 @@
     height: 100%;
     background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
   }
-
 </style>
