@@ -33,6 +33,8 @@ export const commands = {
   playbackSetEq: (gainsDb: number[], enabled: boolean) =>
     invoke<void>("playback_set_eq", { gainsDb, enabled }),
   playbackGetEq: () => invoke<{ gains_db: number[]; enabled: boolean }>("playback_get_eq"),
+  playbackEnableVisualizer: () => invoke<void>("playback_enable_visualizer"),
+  playbackDisableVisualizer: () => invoke<void>("playback_disable_visualizer"),
 
   syncConfigure: (dbUrl: string, token: string) =>
     invoke<void>("sync_configure", { dbUrl, token }),

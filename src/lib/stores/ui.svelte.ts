@@ -3,6 +3,7 @@ export type AlbumSort = 'date_added' | 'artist_name' | 'album_name';
 function createUiStore() {
   let showSettings = $state(false);
   let showDeviceSync = $state(false);
+  let showVisualizer = $state(false);
   let albumSort = $state<AlbumSort>('date_added');
   let nowPlayingDrawerOpen = $state(false);
 
@@ -12,6 +13,9 @@ function createUiStore() {
     },
     get showDeviceSync() {
       return showDeviceSync;
+    },
+    get showVisualizer() {
+      return showVisualizer;
     },
     get albumSort() {
       return albumSort;
@@ -34,6 +38,12 @@ function createUiStore() {
     },
     closeDeviceSync() {
       showDeviceSync = false;
+    },
+    openVisualizer() {
+      showVisualizer = true;
+    },
+    closeVisualizer() {
+      showVisualizer = false;
     },
     setAlbumSort(sort: AlbumSort) {
       albumSort = sort;

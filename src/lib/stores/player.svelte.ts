@@ -14,6 +14,7 @@ function createPlayerStore() {
     album: null,
     album_id: null,
     art_path: null,
+    rms_amplitude: 0,
   });
 
   let eqGains = $state<number[]>(new Array(8).fill(0));

@@ -131,3 +131,13 @@ pub fn playback_get_eq(state: State<AppState>) -> EqSnapshot {
     let eq = state.player.eq_state();
     EqSnapshot { gains_db: eq.gains_db.to_vec(), enabled: eq.enabled }
 }
+
+#[tauri::command]
+pub fn playback_enable_visualizer(state: State<AppState>) {
+    state.player.enable_visualizer();
+}
+
+#[tauri::command]
+pub fn playback_disable_visualizer(state: State<AppState>) {
+    state.player.disable_visualizer();
+}
