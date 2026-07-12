@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -7,16 +8,25 @@ use rodio::{OutputStream, OutputStreamHandle, Sink};
 use souvlaki::{MediaMetadata, MediaPlayback, MediaPosition};
 use tauri::{AppHandle, Emitter};
 
+use super::analysis::NUM_BANDS;
 use super::decode::FileSource;
 use super::eq::{EqGains, EQ_BAND_COUNT};
-use super::{EqualizerSource, PlaybackSnapshot, PlaybackState, PlayerCommand, Queue, TrackInfo};
+use super::{AnalysisSource, EqualizerSource, PlaybackSnapshot, PlaybackState, PlayerCommand, Queue, TrackInfo};
 use crate::db::queries::{settings, stats, tracks};
 use crate::mpris::Mpris;
 use crate::state::DbPool;
 
 const PROGRESS_EVENT: &str = "playback-progress";
-const TICK: Duration = Duration::from_millis(250);
-const SESSION_CHECKPOINT_TICKS: u64 = 40;
+const VISUALIZER_EVENT: &str = "visualizer-data";
+
+// Tick at 20 Hz so visualizer data is smooth.
+const TICK: Duration = Duration::from_millis(50);
+
+// Only emit the full playback-progress snapshot every 5 ticks (= 250ms, same as before).
+const PROGRESS_EMIT_TICKS: u64 = 5;
+
+// Checkpoint session state every 200 ticks (= 10 seconds, same as before).
+const SESSION_CHECKPOINT_TICKS: u64 = 200;
 
 const SETTING_VOLUME: &str = "volume";
 const SETTING_LAST_QUEUE: &str = "last_queue";
@@ -32,6 +42,9 @@ struct EngineState {
     last_sink_len: usize,
     volume: f32,
     eq: Arc<ArcSwap<EqGains>>,
+    rms: Arc<AtomicU32>,
+    fft_bands: Arc<ArcSwap<Vec<f32>>>,
+    visualizer_enabled: Arc<AtomicBool>,
     db: DbPool,
     tick_count: u64,
 }
@@ -43,6 +56,9 @@ pub(super) fn run_engine(
     mpris: Arc<Mpris>,
     db: DbPool,
     eq: Arc<ArcSwap<EqGains>>,
+    rms: Arc<AtomicU32>,
+    fft_bands: Arc<ArcSwap<Vec<f32>>>,
+    visualizer_enabled: Arc<AtomicBool>,
 ) {
     let (_stream, handle) = match OutputStream::try_default() {
         Ok(v) => v,
@@ -59,6 +75,9 @@ pub(super) fn run_engine(
         last_sink_len: 0,
         volume: 1.0,
         eq,
+        rms,
+        fft_bands,
+        visualizer_enabled,
         db,
         tick_count: 0,
     };
@@ -82,7 +101,15 @@ pub(super) fn run_engine(
 
         let snap = build_snapshot(&state);
         snapshot.store(Arc::new(snap.clone()));
-        let _ = app.emit(PROGRESS_EVENT, snap);
+
+        if state.tick_count % PROGRESS_EMIT_TICKS == 0 {
+            let _ = app.emit(PROGRESS_EVENT, snap);
+        }
+
+        if state.visualizer_enabled.load(Ordering::Relaxed) {
+            let bands = (**state.fft_bands.load()).clone();
+            let _ = app.emit(VISUALIZER_EVENT, bands);
+        }
     }
 }
 
@@ -118,7 +145,7 @@ fn poll_queue_advance(state: &mut EngineState, mpris: &Mpris) {
         if let Some(queue) = &state.queue {
             announce_current(queue, mpris, true);
             if let Some(next) = queue.peek_next() {
-                append_track(sink, next, state.eq.clone());
+                append_track(sink, next, state.eq.clone(), state.rms.clone(), state.fft_bands.clone());
             }
         }
         state.last_sink_len = sink.len();
@@ -175,6 +202,8 @@ fn handle_command(state: &mut EngineState, cmd: PlayerCommand, mpris: &Mpris) {
             state.sink = None;
             state.queue = None;
             state.last_sink_len = 0;
+            state.rms.store(0.0f32.to_bits(), Ordering::Relaxed);
+            state.fft_bands.store(Arc::new(vec![0.0f32; NUM_BANDS]));
             mpris.set_playback(MediaPlayback::Stopped);
             clear_session(state);
         }
@@ -241,11 +270,11 @@ fn start_playback_from_queue(
     {
         let Some(queue) = &state.queue else { return };
         let Some(current) = queue.current() else { return };
-        if !append_track(&sink, current, state.eq.clone()) {
+        if !append_track(&sink, current, state.eq.clone(), state.rms.clone(), state.fft_bands.clone()) {
             return;
         }
         if let Some(next) = queue.peek_next() {
-            append_track(&sink, next, state.eq.clone());
+            append_track(&sink, next, state.eq.clone(), state.rms.clone(), state.fft_bands.clone());
         }
         if autoplay {
             sink.play();
@@ -262,10 +291,16 @@ fn start_playback_from_queue(
     state.sink = Some(sink);
 }
 
-fn append_track(sink: &Sink, track: &TrackInfo, eq: Arc<ArcSwap<EqGains>>) -> bool {
+fn append_track(
+    sink: &Sink,
+    track: &TrackInfo,
+    eq: Arc<ArcSwap<EqGains>>,
+    rms: Arc<AtomicU32>,
+    fft_bands: Arc<ArcSwap<Vec<f32>>>,
+) -> bool {
     match FileSource::open(&track.path) {
         Ok(source) => {
-            sink.append(EqualizerSource::new(source, eq));
+            sink.append(AnalysisSource::new(EqualizerSource::new(source, eq), rms, fft_bands));
             true
         }
         Err(e) => {
@@ -417,6 +452,7 @@ fn build_snapshot(state: &EngineState) -> PlaybackSnapshot {
         Some(_) => PlaybackState::Playing,
     };
     let current = state.queue.as_ref().and_then(|q| q.current());
+    let rms_amplitude = f32::from_bits(state.rms.load(Ordering::Relaxed));
     PlaybackSnapshot {
         state: playback_state,
         track_id: current.map(|t| t.track_id),
@@ -428,5 +464,6 @@ fn build_snapshot(state: &EngineState) -> PlaybackSnapshot {
         album: current.map(|t| t.album.clone()),
         album_id: current.and_then(|t| t.album_id),
         art_path: current.and_then(|t| t.art_path.clone()),
+        rms_amplitude,
     }
 }

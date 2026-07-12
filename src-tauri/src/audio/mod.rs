@@ -1,12 +1,16 @@
+mod analysis;
 mod decode;
 mod engine;
 pub mod eq;
 mod queue;
+mod rms;
 
+pub use analysis::{AnalysisSource, NUM_BANDS};
 pub use eq::{EqGains, EqualizerSource, EQ_BAND_COUNT};
 pub use queue::Queue;
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
@@ -39,6 +43,7 @@ pub struct PlaybackSnapshot {
     pub album: Option<String>,
     pub album_id: Option<i64>,
     pub art_path: Option<String>,
+    pub rms_amplitude: f32,
 }
 
 impl Default for PlaybackSnapshot {
@@ -54,6 +59,7 @@ impl Default for PlaybackSnapshot {
             album: None,
             album_id: None,
             art_path: None,
+            rms_amplitude: 0.0,
         }
     }
 }
@@ -86,6 +92,7 @@ pub struct PlayerHandle {
     tx: Sender<PlayerCommand>,
     snapshot: Arc<ArcSwap<PlaybackSnapshot>>,
     eq: Arc<ArcSwap<EqGains>>,
+    pub visualizer_enabled: Arc<AtomicBool>,
 }
 
 impl PlayerHandle {
@@ -100,6 +107,14 @@ impl PlayerHandle {
     pub fn eq_state(&self) -> Arc<EqGains> {
         self.eq.load_full()
     }
+
+    pub fn enable_visualizer(&self) {
+        self.visualizer_enabled.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn disable_visualizer(&self) {
+        self.visualizer_enabled.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 /// Two-step construction resolves the circular dependency between the
@@ -112,6 +127,9 @@ pub struct EngineBuilder {
     rx: Receiver<PlayerCommand>,
     snapshot: Arc<ArcSwap<PlaybackSnapshot>>,
     eq: Arc<ArcSwap<EqGains>>,
+    rms: Arc<AtomicU32>,
+    fft_bands: Arc<ArcSwap<Vec<f32>>>,
+    visualizer_enabled: Arc<AtomicBool>,
 }
 
 impl EngineBuilder {
@@ -119,7 +137,10 @@ impl EngineBuilder {
         let (tx, rx) = channel();
         let snapshot = Arc::new(ArcSwap::from_pointee(PlaybackSnapshot::default()));
         let eq = Arc::new(ArcSwap::from_pointee(EqGains::default()));
-        Self { tx, rx, snapshot, eq }
+        let rms = Arc::new(AtomicU32::new(0.0f32.to_bits()));
+        let fft_bands = Arc::new(ArcSwap::from_pointee(vec![0.0f32; NUM_BANDS]));
+        let visualizer_enabled = Arc::new(AtomicBool::new(false));
+        Self { tx, rx, snapshot, eq, rms, fft_bands, visualizer_enabled }
     }
 
     pub fn handle(&self) -> PlayerHandle {
@@ -127,12 +148,23 @@ impl EngineBuilder {
             tx: self.tx.clone(),
             snapshot: self.snapshot.clone(),
             eq: self.eq.clone(),
+            visualizer_enabled: self.visualizer_enabled.clone(),
         }
     }
 
     pub fn spawn(self, app: AppHandle, mpris: Arc<Mpris>, db: DbPool) {
         thread::spawn(move || {
-            engine::run_engine(self.rx, self.snapshot, app, mpris, db, self.eq)
+            engine::run_engine(
+                self.rx,
+                self.snapshot,
+                app,
+                mpris,
+                db,
+                self.eq,
+                self.rms,
+                self.fft_bands,
+                self.visualizer_enabled,
+            )
         });
     }
 }

@@ -11,6 +11,7 @@ export type PlaybackSnapshot = {
   album: string | null;
   album_id: number | null;
   art_path: string | null;
+  rms_amplitude: number;
 };
 
 export type ArtistRow = {

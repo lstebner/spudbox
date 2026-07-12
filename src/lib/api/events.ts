@@ -23,3 +23,6 @@ export const onDeviceSyncStarted = (cb: () => void) =>
 
 export const onDeviceSyncEnded = (cb: () => void) =>
   listen("device-sync-ended", () => cb());
+
+export const onVisualizerData = (cb: (bands: number[]) => void) =>
+  listen<number[]>("visualizer-data", (event) => cb(event.payload));

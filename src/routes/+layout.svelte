@@ -7,13 +7,14 @@
   import "$lib/styles/theme.css";
   import { confirm } from "@tauri-apps/plugin-dialog";
   import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { HardDrive, Settings } from "@lucide/svelte";
+  import { HardDrive, Settings, Waves } from "@lucide/svelte";
   import { untrack } from "svelte";
   import ArtistList from "$lib/components/sidebar/ArtistList.svelte";
   import TransportBar from "$lib/components/transport/TransportBar.svelte";
   import SettingsPanel from "$lib/components/settings/SettingsPanel.svelte";
   import DeviceSyncPanel from "$lib/components/device/DeviceSyncPanel.svelte";
   import NowPlayingDrawer from "$lib/components/nowplaying/NowPlayingDrawer.svelte";
+  import VisualizerPanel from "$lib/components/visualizer/VisualizerPanel.svelte";
   import ThemeSwitcher from "$lib/components/theme/ThemeSwitcher.svelte";
   import Dropdown from "$lib/components/common/Dropdown.svelte";
   import { library } from "$lib/stores/library.svelte";
@@ -41,6 +42,12 @@
     if (event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey && event.code === "KeyQ") {
       event.preventDefault();
       getCurrentWindow().close();
+      return;
+    }
+
+    if (event.key === "Escape" && ui.showVisualizer) {
+      event.preventDefault();
+      ui.closeVisualizer();
       return;
     }
 
@@ -135,6 +142,14 @@
             <HardDrive size={20} />
           </button>
         {/if}
+        <button
+          class="cog"
+          class:active={ui.showVisualizer}
+          onclick={() => (ui.showVisualizer ? ui.closeVisualizer() : ui.openVisualizer())}
+          aria-label="Visualizer"
+        >
+          <Waves size={20} />
+        </button>
         <ThemeSwitcher />
         <button
           class="cog"
@@ -159,6 +174,9 @@
   <footer class="transport-bar">
     <TransportBar />
   </footer>
+  {#if ui.showVisualizer}
+    <VisualizerPanel onclose={() => ui.closeVisualizer()} />
+  {/if}
   <NowPlayingDrawer />
 </div>
 
