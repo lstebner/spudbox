@@ -52,6 +52,14 @@
     }
 
     if (event.code !== "Space") return;
+    // When the visualizer is open, Space must always toggle play/pause.
+    // Without this, whatever button had focus before the visualizer opened
+    // would intercept Space as its native activation.
+    if (ui.showVisualizer) {
+      event.preventDefault();
+      if (!event.repeat) player.togglePlayPause();
+      return;
+    }
     const target = event.target;
     if (
       target instanceof HTMLElement &&

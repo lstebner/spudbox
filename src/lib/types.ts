@@ -1,5 +1,10 @@
 export type PlaybackState = "stopped" | "playing" | "paused";
 
+export type VisualizerPayload = {
+  bands: number[];
+  samples: number[];
+};
+
 export type PlaybackSnapshot = {
   state: PlaybackState;
   track_id: number | null;

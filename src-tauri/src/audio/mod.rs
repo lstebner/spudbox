@@ -3,9 +3,8 @@ mod decode;
 mod engine;
 pub mod eq;
 mod queue;
-mod rms;
 
-pub use analysis::{AnalysisSource, NUM_BANDS};
+pub use analysis::{AnalysisSource, NUM_BANDS, WAVEFORM_SAMPLES};
 pub use eq::{EqGains, EqualizerSource, EQ_BAND_COUNT};
 pub use queue::Queue;
 
@@ -129,6 +128,7 @@ pub struct EngineBuilder {
     eq: Arc<ArcSwap<EqGains>>,
     rms: Arc<AtomicU32>,
     fft_bands: Arc<ArcSwap<Vec<f32>>>,
+    waveform_samples: Arc<ArcSwap<Vec<f32>>>,
     visualizer_enabled: Arc<AtomicBool>,
 }
 
@@ -139,8 +139,9 @@ impl EngineBuilder {
         let eq = Arc::new(ArcSwap::from_pointee(EqGains::default()));
         let rms = Arc::new(AtomicU32::new(0.0f32.to_bits()));
         let fft_bands = Arc::new(ArcSwap::from_pointee(vec![0.0f32; NUM_BANDS]));
+        let waveform_samples = Arc::new(ArcSwap::from_pointee(vec![0.0f32; WAVEFORM_SAMPLES]));
         let visualizer_enabled = Arc::new(AtomicBool::new(false));
-        Self { tx, rx, snapshot, eq, rms, fft_bands, visualizer_enabled }
+        Self { tx, rx, snapshot, eq, rms, fft_bands, waveform_samples, visualizer_enabled }
     }
 
     pub fn handle(&self) -> PlayerHandle {
@@ -163,6 +164,7 @@ impl EngineBuilder {
                 self.eq,
                 self.rms,
                 self.fft_bands,
+                self.waveform_samples,
                 self.visualizer_enabled,
             )
         });

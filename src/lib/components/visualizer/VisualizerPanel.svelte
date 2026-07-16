@@ -10,6 +10,7 @@
 
   const TRANSITION_DURATION_MILLISECONDS = 200;
   const NUM_BANDS = 64;
+  const WAVEFORM_SAMPLE_COUNT = 512;
   // How far (in degrees) the hue drifts across the full band range.
   // Low-frequency bands shift one way, high-frequency the other, but the
   // total swing is narrow enough that every theme still reads as its own color.
@@ -21,10 +22,23 @@
   const OUTLINE_BAND_START = 6;
   const OUTLINE_BAND_END = 57; // inclusive
 
-  type VisualizerStyle = "bars" | "outline";
+  // Each waveform line is a standing wave (fixed at both ends, like a jump
+  // rope) whose amplitude is modulated by the average FFT energy across its
+  // band range. harmonics = number of half-wavelengths visible (1 = one arch,
+  // 2 = double arch, etc.); speed = oscillation frequency in Hz.
+  const FREQUENCY_LINES = [
+    { bandStart:  0, bandEnd:  7, direction: -1, harmonics:  3, speed: 0.5 },
+    { bandStart:  8, bandEnd: 19, direction: -1, harmonics:  5, speed: 0.9 },
+    { bandStart: 20, bandEnd: 34, direction:  1, harmonics:  7, speed: 1.4 },
+    { bandStart: 35, bandEnd: 48, direction:  1, harmonics: 11, speed: 2.1 },
+    { bandStart: 49, bandEnd: 63, direction:  1, harmonics: 15, speed: 3.2 },
+  ] as const;
+
+  type VisualizerStyle = "bars" | "outline" | "waveform";
   const STYLE_OPTIONS: { value: VisualizerStyle; label: string }[] = [
     { value: "bars", label: "Bars" },
     { value: "outline", label: "Outline" },
+    { value: "waveform", label: "Waveform" },
   ];
 
   let { onclose }: { onclose: () => void } = $props();
@@ -40,13 +54,31 @@
     localStorage.setItem(STYLE_STORAGE_KEY, visualizerStyle);
   });
 
+  $effect(() => {
+    // Clear canvas ghosting when the style changes; reading visualizerStyle
+    // here is what makes this effect reactive to style switches.
+    void visualizerStyle;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  });
+
   let currentBands = new Float32Array(NUM_BANDS);
   let targetBands = new Float32Array(NUM_BANDS);
+  let currentSamples = new Float32Array(WAVEFORM_SAMPLE_COUNT);
   let animationFrameId = 0;
-  // HSL components of the active theme's accent color, parsed once on mount.
+  let wasPlaying = false;
+  // HSL of the accent color, parsed once on mount.
   let accentH = 0;
   let accentS = 0;
   let accentL = 0;
+  // True only for the dark theme (near-black bg).
+  let isDarkTheme = false;
+  // True for the light theme: light bg with a neutral (nearly unsaturated) bg-base.
+  // Colored themes (mint, grape, lemon) also have light bgs but their bg-base
+  // is distinctly tinted (bgS ≈ 55–100%), making bg saturation a reliable signal.
+  let isLightTheme = false;
 
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === "Escape") onclose();
@@ -128,16 +160,51 @@
     outerClipRadius: number,
   ) {
     const bandCount = OUTLINE_BAND_END - OUTLINE_BAND_START + 1;
+    const now = performance.now() / 1000;
 
-    // Compute tip positions using only the musically active band slice.
-    // Angles are derived from position within the slice (not global band index)
-    // so the points are spread evenly around the full 360°.
+    // Average energy per frequency group — each group drives a sector of the
+    // circle so the whole region breathes together rather than each FFT band
+    // creating its own individual spike.
+    const groupEnergies = new Float32Array(FREQUENCY_LINES.length);
+    for (let g = 0; g < FREQUENCY_LINES.length; g++) {
+      const line = FREQUENCY_LINES[g];
+      let total = 0;
+      for (let b = line.bandStart; b <= line.bandEnd; b++) {
+        total += currentBands[b];
+      }
+      groupEnergies[g] = total / (line.bandEnd - line.bandStart + 1);
+    }
+
+    // Three polar standing waves at irrational angular and temporal frequencies
+    // whose interference creates a non-repeating warbly deformation.
+    const wobbleMax = maxBarHeight * 0.10;
+    const timeFactorOne = Math.sin(2 * Math.PI * 0.5 * now);
+    const timeFactorTwo = Math.sin(2 * Math.PI * 0.73 * now);
+    const timeFactorThree = Math.sin(2 * Math.PI * 0.43 * now);
+
     const tipX = new Float32Array(bandCount);
     const tipY = new Float32Array(bandCount);
     for (let index = 0; index < bandCount; index++) {
-      const bandIndex = OUTLINE_BAND_START + index;
-      const radius = innerRadius + currentBands[bandIndex] * maxBarHeight;
       const angle = (index / bandCount) * Math.PI * 2 - Math.PI / 2;
+
+      // Map angle → position in [0, numGroups) so we can blend adjacent group
+      // energies. Group 0 starts at the top (−π/2) and proceeds clockwise.
+      const numGroups = FREQUENCY_LINES.length;
+      const normalizedPosition = ((angle + Math.PI / 2) / (Math.PI * 2) * numGroups + numGroups) % numGroups;
+      const lowerGroup = Math.floor(normalizedPosition) % numGroups;
+      const upperGroup = (lowerGroup + 1) % numGroups;
+      const sectorProgress = normalizedPosition - Math.floor(normalizedPosition);
+      // Cosine blend gives a smooth S-curve transition between adjacent sectors.
+      const blend = (1 - Math.cos(sectorProgress * Math.PI)) / 2;
+      const energy = groupEnergies[lowerGroup] * (1 - blend) + groupEnergies[upperGroup] * blend;
+
+      const wobble = wobbleMax * (
+        Math.sin(3 * angle) * timeFactorOne +
+        Math.sin(5 * angle) * timeFactorTwo * 0.6 +
+        Math.sin(7 * angle) * timeFactorThree * 0.35
+      );
+
+      const radius = innerRadius + energy * maxBarHeight + wobble;
       tipX[index] = cx + radius * Math.cos(angle);
       tipY[index] = cy + radius * Math.sin(angle);
     }
@@ -162,8 +229,6 @@
       const endX = (tipX[index] + tipX[next]) / 2;
       const endY = (tipY[index] + tipY[next]) / 2;
 
-      // Keep hue relative to position in the full frequency range so the color
-      // meaning (low = one end, high = other) is preserved even with fewer bands.
       const bandIndex = OUTLINE_BAND_START + index;
       const hueOffset = (bandIndex / (NUM_BANDS - 1) - 0.5) * HUE_SPREAD_DEGREES;
       const segH = ((accentH + hueOffset) % 360 + 360) % 360;
@@ -175,6 +240,86 @@
       ctx.beginPath();
       ctx.moveTo(startX, startY);
       ctx.quadraticCurveTo(tipX[index], tipY[index], endX, endY);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  function drawWaveform(
+    ctx: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+    innerRadius: number,
+    width: number,
+    height: number,
+  ) {
+    ctx.clearRect(0, 0, width, height);
+
+    const maxAmplitude = (innerRadius - 4) * 1.52;
+    const now = performance.now() / 1000;
+    // More points since we span the full canvas width.
+    const POINT_COUNT = 400;
+
+    ctx.save();
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+    ctx.shadowBlur = 14;
+
+    // Dark and light themes use the canonical color-of-sound spectrum:
+    // sub-bass=red, bass=orange, mid=green, high-mid=blue, treble=violet.
+    // Colored themes spread 5 hues evenly ±60° around their accent hue so
+    // every line reads as the right theme color while staying mutually distinct.
+    const SOUND_COLOR_HUES = [0, 30, 120, 205, 270] as const;
+    const COLORED_THEME_SPREAD_DEGREES = 60;
+    const lineCount = FREQUENCY_LINES.length;
+    // Dark: bold/saturated. Light: softer/pastel. Colored: mid-weight.
+    const lineS = isDarkTheme ? 85 : isLightTheme ? 72 : 82;
+    const lineL = isDarkTheme ? 62 : isLightTheme ? 72 : 65;
+
+    for (let lineIndex = 0; lineIndex < lineCount; lineIndex++) {
+      const line = FREQUENCY_LINES[lineIndex];
+
+      let total = 0;
+      for (let b = line.bandStart; b <= line.bandEnd; b++) {
+        total += currentBands[b];
+      }
+      const amplitude = (total / (line.bandEnd - line.bandStart + 1)) * maxAmplitude;
+      if (amplitude < 1) continue;
+
+      // Three standing waves at irrational speed ratios so they never
+      // lock in sync — their interference creates constantly-shifting
+      // jagged shapes. All terms are zero at x=0 and x=width because
+      // sin(integer·π) = 0, so the line stays anchored at both edges.
+      const omega = 2 * Math.PI * line.speed;
+      const t1 = Math.sin(omega * now);
+      const t2 = Math.sin(omega * 1.414 * now);
+      const t3 = Math.sin(omega * 1.732 * now);
+
+      let lineH: number;
+      if (isDarkTheme || isLightTheme) {
+        lineH = SOUND_COLOR_HUES[lineIndex];
+      } else {
+        const offsetDegrees =
+          -COLORED_THEME_SPREAD_DEGREES +
+          lineIndex * ((COLORED_THEME_SPREAD_DEGREES * 2) / (lineCount - 1));
+        lineH = ((accentH + offsetDegrees) % 360 + 360) % 360;
+      }
+
+      ctx.shadowColor = `hsla(${lineH}, ${lineS}%, ${lineL}%, 0.6)`;
+      ctx.strokeStyle = `hsla(${lineH}, ${lineS}%, ${lineL}%, 0.92)`;
+
+      ctx.beginPath();
+      for (let i = 0; i <= POINT_COUNT; i++) {
+        const x = (i / POINT_COUNT) * width;
+        const phase = line.harmonics * Math.PI * x / width;
+        const wave =
+          Math.sin(phase)     * t1 +
+          Math.sin(phase * 2) * t2 * 0.35 +
+          Math.sin(phase * 3) * t3 * 0.18;
+        const y = cy + line.direction * amplitude * wave;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
       ctx.stroke();
     }
 
@@ -197,6 +342,22 @@
     const availableRadius = Math.min(width, height) / 2 - innerRadius;
     const maxBarHeight = availableRadius * 0.88;
 
+    const isPlaying = player.snapshot.state === "playing";
+
+    if (!isPlaying) {
+      // Freeze: zero the bands so they're clean on resume, skip all drawing.
+      targetBands.fill(0);
+      currentBands.fill(0);
+      wasPlaying = false;
+      return;
+    }
+
+    // On the first frame after resuming, clear any frozen canvas content.
+    if (!wasPlaying) {
+      ctx.clearRect(0, 0, width, height);
+    }
+    wasPlaying = true;
+
     // Interpolate toward target bands for smooth motion between FFT frames.
     for (let i = 0; i < NUM_BANDS; i++) {
       currentBands[i] = currentBands[i] * 0.72 + targetBands[i] * 0.28;
@@ -205,40 +366,48 @@
     const angleStep = (Math.PI * 2) / NUM_BANDS;
     const outerClipRadius = innerRadius + maxBarHeight + 20;
 
-    // Decay trail confined to the bar ring (annulus) only: the inner circle is
-    // punched out with a CCW arc so winding is zero there, leaving the center
-    // and the area outside the bars fully transparent on the canvas.
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(cx, cy, outerClipRadius, 0, Math.PI * 2);
-    ctx.arc(cx, cy, innerRadius - 4, 0, Math.PI * 2, true);
-    ctx.clip();
-    // Outline trails more slowly so ghosts pile up into visible artifacts.
-    const decayAlpha = visualizerStyle === "outline" ? 0.05 : 0.15;
-    ctx.fillStyle = `rgba(0, 0, 0, ${decayAlpha})`;
-    ctx.fillRect(0, 0, width, height);
-    ctx.restore();
+    // Bars and outline share the annulus decay clip; waveform handles its own.
+    if (visualizerStyle === "bars" || visualizerStyle === "outline") {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, outerClipRadius, 0, Math.PI * 2);
+      ctx.arc(cx, cy, innerRadius - 4, 0, Math.PI * 2, true);
+      ctx.clip();
+      // Outline trails more slowly so ghosts pile up into visible artifacts.
+      const decayAlpha = visualizerStyle === "outline" ? 0.05 : 0.15;
+      ctx.fillStyle = `rgba(0, 0, 0, ${decayAlpha})`;
+      ctx.fillRect(0, 0, width, height);
+      ctx.restore();
+    }
 
     if (visualizerStyle === "bars") {
       drawBars(ctx, cx, cy, innerRadius, maxBarHeight, angleStep, outerClipRadius);
-    } else {
+    } else if (visualizerStyle === "outline") {
       drawOutline(ctx, cx, cy, innerRadius, maxBarHeight, angleStep, outerClipRadius);
+    } else {
+      drawWaveform(ctx, cx, cy, innerRadius, width, height);
     }
   }
 
   let unlistenVisualizer: (() => void) | undefined;
 
   onMount(() => {
-    const hex = getComputedStyle(document.documentElement)
-      .getPropertyValue("--accent")
-      .trim();
+    const styles = getComputedStyle(document.documentElement);
+    const hex = styles.getPropertyValue("--accent").trim();
     [accentH, accentS, accentL] = hexToHsl(hex);
+    const bgHex = styles.getPropertyValue("--bg-base").trim();
+    const [, bgS, bgL] = hexToHsl(bgHex);
+    isDarkTheme = bgL < 30;
+    isLightTheme = !isDarkTheme && bgS < 10;
 
     commands.playbackEnableVisualizer();
 
-    onVisualizerData((bands) => {
+    onVisualizerData(({ bands, samples }) => {
       for (let i = 0; i < NUM_BANDS; i++) {
         targetBands[i] = bands[i] ?? 0;
+      }
+      for (let i = 0; i < WAVEFORM_SAMPLE_COUNT; i++) {
+        currentSamples[i] = samples[i] ?? 0;
       }
     }).then((fn) => {
       unlistenVisualizer = fn;
@@ -312,7 +481,12 @@
 
   <div class="content">
     <div class="art-and-canvas">
-      <canvas bind:this={canvas} class="canvas" aria-hidden="true"></canvas>
+      <canvas
+        bind:this={canvas}
+        class="canvas"
+        class:above-art={visualizerStyle === "waveform"}
+        aria-hidden="true"
+      ></canvas>
 
       <div class="art-wrapper" class:playing={artPlaying} style:opacity={artOpacity}>
         {#if player.snapshot.art_path}
@@ -417,6 +591,10 @@
     inset: calc(-1 * min(28vw, 28vh, 300px));
     width: calc(100% + 2 * min(28vw, 28vh, 300px));
     height: calc(100% + 2 * min(28vw, 28vh, 300px));
+  }
+
+  .canvas.above-art {
+    z-index: 2;
   }
 
   .art-wrapper {

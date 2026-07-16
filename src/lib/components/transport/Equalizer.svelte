@@ -373,7 +373,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 10px;
-    z-index: 100;
+    z-index: 120;
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -511,7 +511,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     min-width: 100%;
-    z-index: 101;
+    z-index: 121;
   }
 
   .preset-list button {

@@ -10,6 +10,7 @@ use rustfft::{Fft, FftPlanner};
 
 pub const FFT_SIZE: usize = 2048;
 pub const NUM_BANDS: usize = 64;
+pub const WAVEFORM_SAMPLES: usize = 512;
 
 // dB floor for normalization: bands below this are treated as silent (mapped to 0).
 const DB_FLOOR: f32 = -80.0;
@@ -49,13 +50,15 @@ fn hann_window() -> Vec<f32> {
         .collect()
 }
 
-/// Wraps any `Source<Item = i16>` and continuously computes two things:
+/// Wraps any `Source<Item = i16>` and continuously computes three things:
 ///
 /// - **RMS amplitude**: exponential moving average written to `shared_rms`.
 /// - **Frequency spectrum**: 64-band FFT run on every `FFT_SIZE`-sample mono
 ///   frame, with log-spaced bands and temporal smoothing, written to `shared_fft`.
+/// - **PCM waveform**: the most recent `WAVEFORM_SAMPLES` mono samples,
+///   published to `shared_samples` every time the buffer fills.
 ///
-/// Both shared values are updated inside `Iterator::next` so they reflect the
+/// All shared values are updated inside `Iterator::next` so they reflect the
 /// audio the device is actually playing, not a lookahead.
 pub struct AnalysisSource<S: Source<Item = i16>> {
     inner: S,
@@ -63,12 +66,12 @@ pub struct AnalysisSource<S: Source<Item = i16>> {
     ema_squared: f32,
     alpha_rms: f32,
     shared_rms: Arc<AtomicU32>,
-    // FFT — mono mix-down buffer
+    // Shared mono mix-down: feeds both FFT and waveform.
     channel_accumulator: f32,
     channel_counter: u16,
     channels: u16,
+    // FFT working state
     mono_buffer: Vec<f32>,
-    // FFT plan and working buffers (reused each frame)
     fft: Arc<dyn Fft<f32>>,
     fft_buffer: Vec<Complex<f32>>,
     scratch: Vec<Complex<f32>>,
@@ -76,6 +79,9 @@ pub struct AnalysisSource<S: Source<Item = i16>> {
     band_bins: Vec<(usize, usize)>,
     smoothed_bands: Vec<f32>,
     shared_fft: Arc<ArcSwap<Vec<f32>>>,
+    // Waveform ring buffer
+    waveform_buffer: Vec<f32>,
+    shared_samples: Arc<ArcSwap<Vec<f32>>>,
 }
 
 impl<S: Source<Item = i16>> AnalysisSource<S> {
@@ -83,6 +89,7 @@ impl<S: Source<Item = i16>> AnalysisSource<S> {
         inner: S,
         shared_rms: Arc<AtomicU32>,
         shared_fft: Arc<ArcSwap<Vec<f32>>>,
+        shared_samples: Arc<ArcSwap<Vec<f32>>>,
     ) -> Self {
         let sample_rate = inner.sample_rate();
         let channels = inner.channels().max(1);
@@ -109,6 +116,8 @@ impl<S: Source<Item = i16>> AnalysisSource<S> {
             band_bins: compute_band_bins(sample_rate),
             smoothed_bands: vec![0.0; NUM_BANDS],
             shared_fft,
+            waveform_buffer: Vec::with_capacity(WAVEFORM_SAMPLES),
+            shared_samples,
         }
     }
 
@@ -157,6 +166,8 @@ impl<S: Source<Item = i16>> AnalysisSource<S> {
         self.smoothed_bands.fill(0.0);
         self.shared_rms.store(0.0f32.to_bits(), Ordering::Relaxed);
         self.shared_fft.store(Arc::new(vec![0.0; NUM_BANDS]));
+        self.waveform_buffer.clear();
+        self.shared_samples.store(Arc::new(vec![0.0; WAVEFORM_SAMPLES]));
     }
 }
 
@@ -172,17 +183,23 @@ impl<S: Source<Item = i16>> Iterator for AnalysisSource<S> {
             self.ema_squared * (1.0 - self.alpha_rms) + normalized * normalized * self.alpha_rms;
         self.shared_rms.store(self.ema_squared.sqrt().to_bits(), Ordering::Relaxed);
 
-        // Mix down to mono for FFT.
+        // Mix down to mono; the result feeds both the FFT and waveform buffers.
         self.channel_accumulator += normalized;
         self.channel_counter += 1;
         if self.channel_counter == self.channels {
             let mono = self.channel_accumulator / self.channels as f32;
-            self.mono_buffer.push(mono);
             self.channel_counter = 0;
             self.channel_accumulator = 0.0;
 
+            self.mono_buffer.push(mono);
             if self.mono_buffer.len() == FFT_SIZE {
                 self.run_fft();
+            }
+
+            self.waveform_buffer.push(mono);
+            if self.waveform_buffer.len() == WAVEFORM_SAMPLES {
+                self.shared_samples.store(Arc::new(self.waveform_buffer.clone()));
+                self.waveform_buffer.clear();
             }
         }
 
@@ -252,12 +269,16 @@ mod tests {
         TestSource { samples: samples.into_iter(), sample_rate: 44100, channels: 1 }
     }
 
+    fn make_shared_samples() -> Arc<ArcSwap<Vec<f32>>> {
+        Arc::new(ArcSwap::from_pointee(vec![0.0f32; WAVEFORM_SAMPLES]))
+    }
+
     #[test]
     fn silence_gives_zero_rms() {
         let shared_rms = Arc::new(AtomicU32::new(0));
         let shared_fft = Arc::new(ArcSwap::from_pointee(vec![0.0f32; NUM_BANDS]));
         let source = make_source(vec![0i16; FFT_SIZE * 2]);
-        let mut analysis = AnalysisSource::new(source, shared_rms.clone(), shared_fft);
+        let mut analysis = AnalysisSource::new(source, shared_rms.clone(), shared_fft, make_shared_samples());
         for _ in 0..FFT_SIZE * 2 {
             analysis.next();
         }
@@ -271,7 +292,7 @@ mod tests {
         let shared_fft = Arc::new(ArcSwap::from_pointee(vec![0.0f32; NUM_BANDS]));
         let samples = vec![16000i16; FFT_SIZE * 4];
         let source = make_source(samples);
-        let mut analysis = AnalysisSource::new(source, shared_rms.clone(), shared_fft);
+        let mut analysis = AnalysisSource::new(source, shared_rms.clone(), shared_fft, make_shared_samples());
         for _ in 0..FFT_SIZE * 4 {
             analysis.next();
         }
@@ -294,7 +315,7 @@ mod tests {
         let source =
             TestSource { samples: samples.into_iter(), sample_rate, channels: 1 };
         let mut analysis =
-            AnalysisSource::new(source, shared_rms, shared_fft.clone());
+            AnalysisSource::new(source, shared_rms, shared_fft.clone(), make_shared_samples());
         for _ in 0..FFT_SIZE * 2 {
             analysis.next();
         }
@@ -302,6 +323,28 @@ mod tests {
         let bands = shared_fft.load();
         let max_band = bands.iter().cloned().fold(0.0f32, f32::max);
         assert!(max_band > 0.1, "expected nonzero FFT output for 1 kHz tone, max band was {max_band}");
+    }
+
+    #[test]
+    fn waveform_buffer_publishes_after_enough_samples() {
+        let shared_rms = Arc::new(AtomicU32::new(0));
+        let shared_fft = Arc::new(ArcSwap::from_pointee(vec![0.0f32; NUM_BANDS]));
+        let shared_samples = make_shared_samples();
+
+        // Sine wave so samples are non-zero.
+        let samples: Vec<i16> =
+            (0..WAVEFORM_SAMPLES * 2).map(|i| ((i as f32 * 0.1).sin() * 16000.0) as i16).collect();
+        let source = make_source(samples);
+
+        let mut analysis = AnalysisSource::new(source, shared_rms, shared_fft, shared_samples.clone());
+        for _ in 0..WAVEFORM_SAMPLES * 2 {
+            analysis.next();
+        }
+
+        let published = shared_samples.load();
+        assert_eq!(published.len(), WAVEFORM_SAMPLES);
+        let has_nonzero = published.iter().any(|&s| s.abs() > 1e-4);
+        assert!(has_nonzero, "expected nonzero waveform samples after processing a sine wave");
     }
 
     #[test]
