@@ -160,16 +160,51 @@
     outerClipRadius: number,
   ) {
     const bandCount = OUTLINE_BAND_END - OUTLINE_BAND_START + 1;
+    const now = performance.now() / 1000;
 
-    // Compute tip positions using only the musically active band slice.
-    // Angles are derived from position within the slice (not global band index)
-    // so the points are spread evenly around the full 360°.
+    // Average energy per frequency group — each group drives a sector of the
+    // circle so the whole region breathes together rather than each FFT band
+    // creating its own individual spike.
+    const groupEnergies = new Float32Array(FREQUENCY_LINES.length);
+    for (let g = 0; g < FREQUENCY_LINES.length; g++) {
+      const line = FREQUENCY_LINES[g];
+      let total = 0;
+      for (let b = line.bandStart; b <= line.bandEnd; b++) {
+        total += currentBands[b];
+      }
+      groupEnergies[g] = total / (line.bandEnd - line.bandStart + 1);
+    }
+
+    // Three polar standing waves at irrational angular and temporal frequencies
+    // whose interference creates a non-repeating warbly deformation.
+    const wobbleMax = maxBarHeight * 0.10;
+    const timeFactorOne = Math.sin(2 * Math.PI * 0.5 * now);
+    const timeFactorTwo = Math.sin(2 * Math.PI * 0.73 * now);
+    const timeFactorThree = Math.sin(2 * Math.PI * 0.43 * now);
+
     const tipX = new Float32Array(bandCount);
     const tipY = new Float32Array(bandCount);
     for (let index = 0; index < bandCount; index++) {
-      const bandIndex = OUTLINE_BAND_START + index;
-      const radius = innerRadius + currentBands[bandIndex] * maxBarHeight;
       const angle = (index / bandCount) * Math.PI * 2 - Math.PI / 2;
+
+      // Map angle → position in [0, numGroups) so we can blend adjacent group
+      // energies. Group 0 starts at the top (−π/2) and proceeds clockwise.
+      const numGroups = FREQUENCY_LINES.length;
+      const normalizedPosition = ((angle + Math.PI / 2) / (Math.PI * 2) * numGroups + numGroups) % numGroups;
+      const lowerGroup = Math.floor(normalizedPosition) % numGroups;
+      const upperGroup = (lowerGroup + 1) % numGroups;
+      const sectorProgress = normalizedPosition - Math.floor(normalizedPosition);
+      // Cosine blend gives a smooth S-curve transition between adjacent sectors.
+      const blend = (1 - Math.cos(sectorProgress * Math.PI)) / 2;
+      const energy = groupEnergies[lowerGroup] * (1 - blend) + groupEnergies[upperGroup] * blend;
+
+      const wobble = wobbleMax * (
+        Math.sin(3 * angle) * timeFactorOne +
+        Math.sin(5 * angle) * timeFactorTwo * 0.6 +
+        Math.sin(7 * angle) * timeFactorThree * 0.35
+      );
+
+      const radius = innerRadius + energy * maxBarHeight + wobble;
       tipX[index] = cx + radius * Math.cos(angle);
       tipY[index] = cy + radius * Math.sin(angle);
     }
@@ -194,8 +229,6 @@
       const endX = (tipX[index] + tipX[next]) / 2;
       const endY = (tipY[index] + tipY[next]) / 2;
 
-      // Keep hue relative to position in the full frequency range so the color
-      // meaning (low = one end, high = other) is preserved even with fewer bands.
       const bandIndex = OUTLINE_BAND_START + index;
       const hueOffset = (bandIndex / (NUM_BANDS - 1) - 0.5) * HUE_SPREAD_DEGREES;
       const segH = ((accentH + hueOffset) % 360 + 360) % 360;
