@@ -1,5 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
-import type { DevicePreviewProgress, DeviceStatus, DeviceSyncProgress, PlaybackSnapshot } from "$lib/types";
+import type { DevicePreviewProgress, DeviceStatus, DeviceSyncProgress, PlaybackSnapshot, VisualizerPayload } from "$lib/types";
 
 export type ScanProgressPayload = { scanned: number; total: number };
 
@@ -24,5 +24,5 @@ export const onDeviceSyncStarted = (cb: () => void) =>
 export const onDeviceSyncEnded = (cb: () => void) =>
   listen("device-sync-ended", () => cb());
 
-export const onVisualizerData = (cb: (bands: number[]) => void) =>
-  listen<number[]>("visualizer-data", (event) => cb(event.payload));
+export const onVisualizerData = (cb: (payload: VisualizerPayload) => void) =>
+  listen<VisualizerPayload>("visualizer-data", (event) => cb(event.payload));

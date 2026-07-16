@@ -8,7 +8,7 @@ use rodio::{OutputStream, OutputStreamHandle, Sink};
 use souvlaki::{MediaMetadata, MediaPlayback, MediaPosition};
 use tauri::{AppHandle, Emitter};
 
-use super::analysis::NUM_BANDS;
+use super::analysis::{NUM_BANDS, WAVEFORM_SAMPLES};
 use super::decode::FileSource;
 use super::eq::{EqGains, EQ_BAND_COUNT};
 use super::{AnalysisSource, EqualizerSource, PlaybackSnapshot, PlaybackState, PlayerCommand, Queue, TrackInfo};
@@ -44,9 +44,16 @@ struct EngineState {
     eq: Arc<ArcSwap<EqGains>>,
     rms: Arc<AtomicU32>,
     fft_bands: Arc<ArcSwap<Vec<f32>>>,
+    waveform_samples: Arc<ArcSwap<Vec<f32>>>,
     visualizer_enabled: Arc<AtomicBool>,
     db: DbPool,
     tick_count: u64,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct VisualizerPayload {
+    bands: Vec<f32>,
+    samples: Vec<f32>,
 }
 
 pub(super) fn run_engine(
@@ -58,6 +65,7 @@ pub(super) fn run_engine(
     eq: Arc<ArcSwap<EqGains>>,
     rms: Arc<AtomicU32>,
     fft_bands: Arc<ArcSwap<Vec<f32>>>,
+    waveform_samples: Arc<ArcSwap<Vec<f32>>>,
     visualizer_enabled: Arc<AtomicBool>,
 ) {
     let (_stream, handle) = match OutputStream::try_default() {
@@ -77,6 +85,7 @@ pub(super) fn run_engine(
         eq,
         rms,
         fft_bands,
+        waveform_samples,
         visualizer_enabled,
         db,
         tick_count: 0,
@@ -108,7 +117,8 @@ pub(super) fn run_engine(
 
         if state.visualizer_enabled.load(Ordering::Relaxed) {
             let bands = (**state.fft_bands.load()).clone();
-            let _ = app.emit(VISUALIZER_EVENT, bands);
+            let samples = (**state.waveform_samples.load()).clone();
+            let _ = app.emit(VISUALIZER_EVENT, VisualizerPayload { bands, samples });
         }
     }
 }
@@ -145,7 +155,7 @@ fn poll_queue_advance(state: &mut EngineState, mpris: &Mpris) {
         if let Some(queue) = &state.queue {
             announce_current(queue, mpris, true);
             if let Some(next) = queue.peek_next() {
-                append_track(sink, next, state.eq.clone(), state.rms.clone(), state.fft_bands.clone());
+                append_track(sink, next, state.eq.clone(), state.rms.clone(), state.fft_bands.clone(), state.waveform_samples.clone());
             }
         }
         state.last_sink_len = sink.len();
@@ -204,6 +214,7 @@ fn handle_command(state: &mut EngineState, cmd: PlayerCommand, mpris: &Mpris) {
             state.last_sink_len = 0;
             state.rms.store(0.0f32.to_bits(), Ordering::Relaxed);
             state.fft_bands.store(Arc::new(vec![0.0f32; NUM_BANDS]));
+            state.waveform_samples.store(Arc::new(vec![0.0f32; WAVEFORM_SAMPLES]));
             mpris.set_playback(MediaPlayback::Stopped);
             clear_session(state);
         }
@@ -270,11 +281,11 @@ fn start_playback_from_queue(
     {
         let Some(queue) = &state.queue else { return };
         let Some(current) = queue.current() else { return };
-        if !append_track(&sink, current, state.eq.clone(), state.rms.clone(), state.fft_bands.clone()) {
+        if !append_track(&sink, current, state.eq.clone(), state.rms.clone(), state.fft_bands.clone(), state.waveform_samples.clone()) {
             return;
         }
         if let Some(next) = queue.peek_next() {
-            append_track(&sink, next, state.eq.clone(), state.rms.clone(), state.fft_bands.clone());
+            append_track(&sink, next, state.eq.clone(), state.rms.clone(), state.fft_bands.clone(), state.waveform_samples.clone());
         }
         if autoplay {
             sink.play();
@@ -297,10 +308,16 @@ fn append_track(
     eq: Arc<ArcSwap<EqGains>>,
     rms: Arc<AtomicU32>,
     fft_bands: Arc<ArcSwap<Vec<f32>>>,
+    waveform_samples: Arc<ArcSwap<Vec<f32>>>,
 ) -> bool {
     match FileSource::open(&track.path) {
         Ok(source) => {
-            sink.append(AnalysisSource::new(EqualizerSource::new(source, eq), rms, fft_bands));
+            sink.append(AnalysisSource::new(
+                EqualizerSource::new(source, eq),
+                rms,
+                fft_bands,
+                waveform_samples,
+            ));
             true
         }
         Err(e) => {
